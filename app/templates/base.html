@@ -9,6 +9,10 @@
 <body id="appBody">
   <div id="appShell" class="app-shell">
     <aside id="appNavPanel" class="nav-panel">
+      <div id="globalAjaxSpinner" class="nav-spinner" role="status" aria-live="polite" aria-hidden="true">
+        <span class="nav-spinner-wheel" aria-hidden="true"></span>
+        <span class="nav-spinner-label">loading</span>
+      </div>
       <h1 id="appBrand" class="brand">NetAI</h1>
       <nav id="primaryNav">
         <a id="navUploadLink" href="{{ url_for('ui.index_page') }}" class="nav-link">upload</a>

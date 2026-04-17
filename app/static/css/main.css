@@ -36,6 +36,41 @@ body {
   letter-spacing: 0.04em;
 }
 
+.nav-spinner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px 0;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.nav-spinner.is-active {
+  opacity: 1;
+}
+
+.nav-spinner-wheel {
+  width: 28px;
+  height: 28px;
+  border: 2px solid rgba(243, 245, 246, 0.36);
+  border-top-color: var(--primary);
+  border-radius: 999px;
+  animation: nav-spinner-rotate 700ms linear infinite;
+}
+
+.nav-spinner-label {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(243, 245, 246, 0.86);
+}
+
+@keyframes nav-spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .nav-link {
   display: block;
   margin: 8px 0;

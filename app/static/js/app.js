@@ -1,4 +1,38 @@
 const PAGE_SIZE = 250;
+let activeAjaxRequestCount = 0;
+
+function setGlobalAjaxSpinnerVisible(isVisible) {
+  const spinner = document.getElementById('globalAjaxSpinner');
+  if (!spinner) {
+    return;
+  }
+
+  spinner.classList.toggle('is-active', isVisible);
+  spinner.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
+}
+
+function installGlobalAjaxSpinner() {
+  if (typeof window.fetch !== 'function' || window.__netaiFetchSpinnerInstalled) {
+    return;
+  }
+
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = async (...args) => {
+    activeAjaxRequestCount += 1;
+    setGlobalAjaxSpinnerVisible(true);
+
+    try {
+      return await nativeFetch(...args);
+    } finally {
+      activeAjaxRequestCount = Math.max(0, activeAjaxRequestCount - 1);
+      if (activeAjaxRequestCount === 0) {
+        setGlobalAjaxSpinnerVisible(false);
+      }
+    }
+  };
+
+  window.__netaiFetchSpinnerInstalled = true;
+}
 
 async function fetchConfigs() {
   const res = await fetch('/api/configs');
@@ -1026,6 +1060,7 @@ async function initAnalyzePage() {
 
 window.addEventListener('DOMContentLoaded', async () => {
   try {
+    installGlobalAjaxSpinner();
     await initIndexPage();
     await initAnalyzePage();
   } catch (err) {
