@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
-from typing import Dict, List, Optional, Set
+from typing import Dict, Iterator, List, Optional, Set, Tuple
 from zipfile import ZipFile
 
 import boto3
@@ -102,6 +102,40 @@ class S3Manager:
             if code in {"404", "NoSuchKey", "NotFound"}:
                 return False
             raise
+
+    def list_config_files(self, config_folder: str) -> List[str]:
+        prefix = f"{config_folder}/configs/"
+        paginator = self._client().get_paginator("list_objects_v2")
+        files: List[str] = []
+
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                key = obj.get("Key", "")
+                if not key or key.endswith("/"):
+                    continue
+                relative = key[len(prefix) :] if key.startswith(prefix) else key
+                if relative:
+                    files.append(relative)
+
+        return sorted(files)
+
+    def iter_config_file_lines(self, config_folder: str, filename: str) -> Iterator[Tuple[int, str]]:
+        key = f"{config_folder}/configs/{filename}"
+        try:
+            response = self._client().get_object(Bucket=self.bucket, Key=key)
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code")
+            if code in {"404", "NoSuchKey", "NotFound"}:
+                raise FileNotFoundError(f"Config file not found: {filename}") from exc
+            raise
+
+        body = response["Body"]
+        for line_number, raw_line in enumerate(body.iter_lines(chunk_size=8192), start=1):
+            yield line_number, raw_line.decode("utf-8", errors="replace")
+
+    def get_config_file_text(self, config_folder: str, filename: str) -> str:
+        lines = [line for _, line in self.iter_config_file_lines(config_folder, filename)]
+        return "\n".join(lines)
 
     def upload_file(self, config_folder: str, file_storage) -> Dict[str, object]:
         original_name = sanitize_filename(file_storage.filename)

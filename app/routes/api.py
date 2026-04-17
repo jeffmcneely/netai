@@ -1,6 +1,7 @@
 from flask import Blueprint, current_app, request
 
 from app.services.batfish_manager import BatfishManager, build_header_constraints
+from app.services.ip_finder import find_object_matches, normalize_max_results
 from app.services.s3_manager import S3Manager
 from app.utils.responses import fail, ok
 from app.utils.validators import (
@@ -9,6 +10,7 @@ from app.utils.validators import (
     parse_int_values,
     parse_ip_values,
     parse_ports,
+    sanitize_filename,
     validate_folder_name,
 )
 
@@ -67,6 +69,43 @@ def _normalize_search_filters(raw: dict) -> dict:
             raise ValidationError(f"Invalid tcp flag '{flag}'")
 
     return normalized
+
+
+def _parse_find_object_payload(payload: dict) -> tuple[str, str, int]:
+    if payload is None:
+        raise ValidationError("JSON payload is required")
+
+    config_folder = _resolve_config_folder(payload)
+
+    search_ip = str(payload.get("ip", "")).strip()
+    parsed_values = parse_ip_values(search_ip, "ip")
+    if len(parsed_values) != 1:
+        raise ValidationError("Provide exactly one IP/CIDR value for ip")
+
+    try:
+        max_results = normalize_max_results(payload.get("max_results"))
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+
+    return config_folder, parsed_values[0], max_results
+
+
+def _parse_find_object_file_query() -> tuple[str, str, int]:
+    config_folder = validate_folder_name(str(request.args.get("config_folder", "")).strip())
+    filename = str(request.args.get("filename", "")).strip()
+    if not filename:
+        raise ValidationError("filename is required")
+
+    safe_filename = sanitize_filename(filename)
+
+    raw_jump_line = str(request.args.get("jump_line", "")).strip()
+    if not raw_jump_line:
+        return config_folder, safe_filename, 0
+
+    if not raw_jump_line.isdigit() or int(raw_jump_line) < 1:
+        raise ValidationError("jump_line must be a positive integer")
+
+    return config_folder, safe_filename, int(raw_jump_line)
 
 
 @api_bp.get("/configs")
@@ -137,3 +176,71 @@ def search():
         return fail(str(exc), "VALIDATION_ERROR", status=400)
     except Exception as exc:
         return fail(str(exc), "SEARCH_ERROR", status=500)
+
+
+@api_bp.post("/find-object")
+def find_object():
+    try:
+        payload = request.get_json(force=True)
+        config_folder, search_ip, max_results = _parse_find_object_payload(payload)
+
+        s3 = _s3_manager()
+        files = s3.list_config_files(config_folder)
+        files_with_lines = ((filename, s3.iter_config_file_lines(config_folder, filename)) for filename in files)
+
+        normalized_input, matches, truncated = find_object_matches(
+            search_input=search_ip,
+            files_with_lines=files_with_lines,
+            max_results=max_results,
+        )
+
+        return ok(
+            {
+                "config_folder": config_folder,
+                "input": normalized_input,
+                "total_matches": len(matches),
+                "truncated": truncated,
+                "max_results": max_results,
+                "results": matches,
+            }
+        )
+    except ValidationError as exc:
+        return fail(str(exc), "VALIDATION_ERROR", status=400)
+    except Exception as exc:
+        return fail(str(exc), "FIND_OBJECT_ERROR", status=500)
+
+
+@api_bp.get("/find-object/file")
+def find_object_file():
+    try:
+        config_folder, filename, jump_line = _parse_find_object_file_query()
+
+        s3 = _s3_manager()
+        text = s3.get_config_file_text(config_folder, filename)
+        lines = text.split("\n") if text else []
+
+        if jump_line > len(lines):
+            jump_line = 0
+
+        return ok(
+            {
+                "config_folder": config_folder,
+                "filename": filename,
+                "jump_line": jump_line,
+                "total_lines": len(lines),
+                "lines": [
+                    {
+                        "line_number": index + 1,
+                        "content": line,
+                        "is_jump_target": jump_line > 0 and jump_line == (index + 1),
+                    }
+                    for index, line in enumerate(lines)
+                ],
+            }
+        )
+    except ValidationError as exc:
+        return fail(str(exc), "VALIDATION_ERROR", status=400)
+    except FileNotFoundError as exc:
+        return fail(str(exc), "FILE_NOT_FOUND", status=404)
+    except Exception as exc:
+        return fail(str(exc), "FIND_OBJECT_FILE_ERROR", status=500)

@@ -23,6 +23,15 @@ function makeFolderRadio(name, group) {
   return label;
 }
 
+function syncSelectedRadioRows(groupName) {
+  document.querySelectorAll(`input[name="${groupName}"]`).forEach((input) => {
+    const row = input.closest('.radio-row');
+    if (row) {
+      row.classList.toggle('selected', input.checked);
+    }
+  });
+}
+
 function getFolderSelection(radioName, newNameId) {
   const selected = document.querySelector(`input[name="${radioName}"]:checked`);
   if (!selected) {
@@ -95,6 +104,44 @@ function renderAnalyzeTable(target, rows, page = 1) {
 
   target.innerHTML = `<div class="table-wrap"><table>${header}${body}</table></div>`;
   return { pages: Math.ceil(rows.length / PAGE_SIZE), page };
+}
+
+function renderFindObjectTable(target, rows, page = 1) {
+  target.classList.remove('hidden');
+  if (!rows.length) {
+    target.innerHTML = '<p>No matching objects found.</p>';
+    return { pages: 0, page: 0 };
+  }
+
+  const start = (page - 1) * PAGE_SIZE;
+  const paged = rows.slice(start, start + PAGE_SIZE);
+  const header = '<tr><th>File</th><th>Line</th><th>Matched Object</th><th>Capture</th><th>View</th></tr>';
+  const body = paged.map((row, idx) => {
+    const rowIndex = start + idx;
+    return `<tr>
+      <td>${escapeHtml(row.filename || '')}</td>
+      <td>${escapeHtml(String(row.line_number || ''))}</td>
+      <td>${escapeHtml(row.matched_object || '')}</td>
+      <td>${escapeHtml(row.capture || '')}</td>
+      <td><button type="button" class="find-object-open-btn" data-find-row-index="${rowIndex}">open file</button></td>
+    </tr>`;
+  }).join('');
+
+  target.innerHTML = `<h4>Find Object Results (${rows.length})</h4><div class="table-wrap"><table>${header}${body}</table></div>`;
+  return { pages: Math.ceil(rows.length / PAGE_SIZE), page };
+}
+
+function renderFileViewerHtml(payload) {
+  const title = `${payload.filename || '-'} (${payload.total_lines || 0} lines)`;
+  const rows = (payload.lines || []).map((line) => {
+    const lineClass = line.is_jump_target ? 'viewer-line viewer-line-target' : 'viewer-line';
+    return `<div class="${lineClass}" data-viewer-line="${line.line_number}">
+      <span class="viewer-gutter">${line.line_number}</span>
+      <span class="viewer-text">${escapeHtml(line.content || '')}</span>
+    </div>`;
+  }).join('');
+
+  return `<div class="file-viewer-wrap"><p class="file-viewer-title">${escapeHtml(title)}</p><div class="file-viewer-code">${rows}</div></div>`;
 }
 
 function flattenForDetails(value, prefix = '', out = []) {
@@ -231,6 +278,7 @@ async function initIndexPage() {
   const onSelectionChange = () => {
     const selected = document.querySelector('input[name="folderChoice"]:checked');
     newField.classList.toggle('hidden', !(selected && selected.value === '__new__'));
+    syncSelectedRadioRows('folderChoice');
   };
 
   document.addEventListener('change', (event) => {
@@ -238,6 +286,8 @@ async function initIndexPage() {
       onSelectionChange();
     }
   });
+
+  onSelectionChange();
 
   const uploadFiles = async (files) => {
     const folderInfo = getFolderSelection('folderChoice', 'newFolderName');
@@ -305,19 +355,29 @@ async function initAnalyzePage() {
   const newField = document.getElementById('analyzeNewFolderName');
   const analyzeBtn = document.getElementById('analyzeBtn');
   const searchBtn = document.getElementById('searchBtn');
+  const findObjectBtn = document.getElementById('findObjectBtn');
   const searchPanel = document.getElementById('searchPanel');
+  const findObjectPanel = document.getElementById('findObjectPanel');
+  const findObjectIp = document.getElementById('findObjectIp');
+  const runFindObjectBtn = document.getElementById('runFindObjectBtn');
   const runSearchBtn = document.getElementById('runSearchBtn');
   const applyClientMatchBtn = document.getElementById('applyClientMatchBtn');
   const meta = document.getElementById('analysisMeta');
   const results = document.getElementById('results');
   const pager = document.getElementById('pager');
+  const findObjectResults = document.getElementById('findObjectResults');
+  const findObjectPager = document.getElementById('findObjectPager');
   const detailFlyout = document.getElementById('detailFlyout');
   const detailFlyoutTitle = document.getElementById('detailFlyoutTitle');
   const detailFlyoutBody = document.getElementById('detailFlyoutBody');
   const detailFlyoutClose = document.getElementById('detailFlyoutClose');
+  const fileViewerFlyout = document.getElementById('fileViewerFlyout');
+  const fileViewerFlyoutBody = document.getElementById('fileViewerFlyoutBody');
+  const fileViewerFlyoutClose = document.getElementById('fileViewerFlyoutClose');
 
   let allRows = [];
   let filteredRows = [];
+  let findObjectRows = [];
   let snapshotName = '';
 
   const folders = await fetchConfigs();
@@ -327,13 +387,21 @@ async function initAnalyzePage() {
     if (event.target.name === 'analyzeFolderChoice') {
       const selected = document.querySelector('input[name="analyzeFolderChoice"]:checked');
       newField.classList.toggle('hidden', !(selected && selected.value === '__new__'));
+      syncSelectedRadioRows('analyzeFolderChoice');
     }
   });
+
+  syncSelectedRadioRows('analyzeFolderChoice');
 
   const closeDetailFlyout = () => {
     detailFlyout.classList.add('hidden');
     detailFlyoutTitle.textContent = 'Details';
     detailFlyoutBody.innerHTML = '';
+  };
+
+  const closeFileViewerFlyout = () => {
+    fileViewerFlyout.classList.add('hidden');
+    fileViewerFlyoutBody.innerHTML = '';
   };
 
   const openDetailFlyout = (kind, row) => {
@@ -349,6 +417,7 @@ async function initAnalyzePage() {
   };
 
   detailFlyoutClose.addEventListener('click', closeDetailFlyout);
+  fileViewerFlyoutClose.addEventListener('click', closeFileViewerFlyout);
 
   const updateMeta = (visible, total) => {
     showMessage(
@@ -362,6 +431,18 @@ async function initAnalyzePage() {
     const draw = () => {
       const pg = renderAnalyzeTable(results, rows, currentPage);
       renderPager(pager, pg.pages, currentPage, (newPage) => {
+        currentPage = newPage;
+        draw();
+      });
+    };
+    draw();
+  };
+
+  const renderFindRows = (rows) => {
+    let currentPage = 1;
+    const draw = () => {
+      const pg = renderFindObjectTable(findObjectResults, rows, currentPage);
+      renderPager(findObjectPager, pg.pages, currentPage, (newPage) => {
         currentPage = newPage;
         draw();
       });
@@ -393,6 +474,48 @@ async function initAnalyzePage() {
     renderRows(filteredRows);
   });
 
+  findObjectResults.addEventListener('click', async (event) => {
+    const btn = event.target.closest('.find-object-open-btn');
+    if (!btn) {
+      return;
+    }
+
+    const rowIndex = Number(btn.getAttribute('data-find-row-index'));
+    const row = findObjectRows[rowIndex];
+    if (!row) {
+      return;
+    }
+
+    try {
+      const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
+      const folder = folderInfo.use_new ? folderInfo.new_folder_name : folderInfo.config_folder;
+      const query = new URLSearchParams({
+        config_folder: folder,
+        filename: row.filename,
+        jump_line: String(row.line_number || 0),
+      });
+
+      const res = await fetch(`/api/find-object/file?${query.toString()}`);
+      const json = await res.json();
+      if (json.status !== 'success') {
+        throw new Error(json.error?.message || 'Failed to open file');
+      }
+
+      fileViewerFlyoutBody.innerHTML = renderFileViewerHtml(json.data || {});
+      fileViewerFlyout.classList.remove('hidden');
+
+      const jumpLine = Number(json.data?.jump_line || 0);
+      if (jumpLine > 0) {
+        const target = fileViewerFlyoutBody.querySelector(`[data-viewer-line="${jumpLine}"]`);
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+    } catch (err) {
+      showMessage(meta, `<p>${escapeHtml(err.message)}</p>`);
+    }
+  });
+
   analyzeBtn.addEventListener('click', async () => {
     try {
       const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
@@ -410,6 +533,7 @@ async function initAnalyzePage() {
       allRows = json.data.rows || [];
       filteredRows = [...allRows];
       closeDetailFlyout();
+      closeFileViewerFlyout();
       updateMeta(filteredRows.length, allRows.length);
       renderRows(filteredRows);
     } catch (err) {
@@ -419,6 +543,43 @@ async function initAnalyzePage() {
 
   searchBtn.addEventListener('click', () => {
     searchPanel.classList.toggle('hidden');
+  });
+
+  findObjectBtn.addEventListener('click', () => {
+    findObjectPanel.classList.toggle('hidden');
+  });
+
+  runFindObjectBtn.addEventListener('click', async () => {
+    try {
+      const ip = (findObjectIp.value || '').trim();
+      if (!ip) {
+        throw new Error('IP is required');
+      }
+
+      const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
+      const body = {
+        ...folderInfo,
+        ip,
+      };
+
+      const res = await fetch('/api/find-object', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (json.status !== 'success') {
+        throw new Error(json.error?.message || 'Find object failed');
+      }
+
+      findObjectRows = json.data.results || [];
+      closeDetailFlyout();
+      closeFileViewerFlyout();
+      renderFindRows(findObjectRows);
+    } catch (err) {
+      showMessage(findObjectResults, `<p>${escapeHtml(err.message)}</p>`);
+      findObjectPager.classList.add('hidden');
+    }
   });
 
   runSearchBtn.addEventListener('click', async () => {
@@ -443,6 +604,7 @@ async function initAnalyzePage() {
       allRows = json.data.rows || [];
       filteredRows = [...allRows];
       closeDetailFlyout();
+      closeFileViewerFlyout();
       updateMeta(filteredRows.length, allRows.length);
       renderRows(filteredRows);
     } catch (err) {
