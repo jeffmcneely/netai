@@ -8,6 +8,20 @@ IP_NETWORK = ipaddress.IPv4Network | ipaddress.IPv6Network
 
 # Extract IP-like tokens and rely on ipaddress for final validation.
 IP_CANDIDATE_RE = re.compile(r"(?<![0-9A-Za-z])([0-9A-Fa-f:.%]+(?:/\d{1,3})?)(?![0-9A-Za-z])")
+IP_OR_HOST_RE = r"[0-9A-Fa-f:.%]+"
+SUBNET_RE = r"(?:[0-9.]+|[0-9A-Fa-f:]+|\d{1,3})"
+LINE_NETWORK_PATTERNS = [
+    re.compile(rf"\baddress\s+(?P<ip>{IP_OR_HOST_RE})\s+(?P<subnet>{SUBNET_RE})\b", re.IGNORECASE),
+    re.compile(rf"\bnetwork\s+(?P<ip>{IP_OR_HOST_RE})\s+mask\s+(?P<subnet>{SUBNET_RE})\b", re.IGNORECASE),
+    re.compile(rf"\bnetwork\s+(?P<ip>{IP_OR_HOST_RE})\s+(?P<subnet>{SUBNET_RE})\b", re.IGNORECASE),
+    re.compile(rf"\bip\s+(?P<ip>{IP_OR_HOST_RE})\s+(?P<subnet>{SUBNET_RE})\b", re.IGNORECASE),
+]
+ANY_TOKEN_MAP = {
+    "any": "0.0.0.0/0",
+    "any4": "0.0.0.0/0",
+    "any6": "::/0",
+}
+ANY_TOKEN_RE = re.compile(r"\b(any6|any4|any)\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -28,8 +42,35 @@ def _parse_candidate(token: str) -> IP_NETWORK | None:
         return None
 
 
+def _contains_index(index: int, spans: list[tuple[int, int]]) -> bool:
+    return any(start <= index < end for start, end in spans)
+
+
 def iter_line_candidates(line: str) -> Iterator[ParsedCandidate]:
+    consumed_spans: list[tuple[int, int]] = []
+
+    for matcher in LINE_NETWORK_PATTERNS:
+        for match in matcher.finditer(line):
+            network_token = f"{match.group('ip')}/{match.group('subnet')}"
+            parsed = _parse_candidate(network_token)
+            if parsed is None:
+                continue
+            consumed_spans.append((match.start(), match.end()))
+            yield ParsedCandidate(token=network_token, start=match.start("ip"), network=parsed)
+
+    for match in ANY_TOKEN_RE.finditer(line):
+        if _contains_index(match.start(), consumed_spans):
+            continue
+        token = match.group(1)
+        parsed = _parse_candidate(ANY_TOKEN_MAP[token.lower()])
+        if parsed is None:
+            continue
+        consumed_spans.append((match.start(), match.end()))
+        yield ParsedCandidate(token=token, start=match.start(1), network=parsed)
+
     for match in IP_CANDIDATE_RE.finditer(line):
+        if _contains_index(match.start(1), consumed_spans):
+            continue
         token = match.group(1)
         parsed = _parse_candidate(token)
         if parsed is None:
