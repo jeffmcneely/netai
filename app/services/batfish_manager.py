@@ -122,10 +122,19 @@ class BatfishManager:
         frame = query.answer().frame()
         return _frame_to_records(frame)
 
-    def run_interface_properties(self) -> List[Dict[str, object]]:
+    def run_interface_properties(self, node_hostname: Optional[str] = None) -> List[Dict[str, object]]:
         bf = self._session()
-        query = bf.q.interfaceProperties()
-        logger.debug("Sending Batfish query host=%s query=%s", self.server, "interfaceProperties")
+        query = (
+            bf.q.interfaceProperties(nodes=node_hostname)
+            if node_hostname
+            else bf.q.interfaceProperties()
+        )
+        logger.debug(
+            "Sending Batfish query host=%s query=%s node=%s",
+            self.server,
+            "interfaceProperties",
+            node_hostname or "*",
+        )
         frame = query.answer().frame()
         return _frame_to_records(frame)
 

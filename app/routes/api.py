@@ -183,11 +183,12 @@ def interfaces():
     try:
         payload = request.get_json(force=True)
         config_folder = _resolve_config_folder(payload)
+        node_hostname = str(payload.get("node_hostname", "")).strip()
 
         s3 = _s3_manager()
         bf = _batfish_manager()
         snapshot_name = bf.init_snapshot(s3.get_snapshot_zip_data(config_folder), config_folder)
-        rows = bf.run_interface_properties()
+        rows = bf.run_interface_properties(node_hostname=node_hostname or None)
 
         return ok({"snapshot_name": snapshot_name, "rows": rows})
     except ValidationError as exc:

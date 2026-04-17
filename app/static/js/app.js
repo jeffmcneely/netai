@@ -123,6 +123,14 @@ function getRowValueByAliases(row, aliases) {
   return '';
 }
 
+function extractNodeHostname(row) {
+  const nodeValue = getRowValueByAliases(row, ['Node', 'Hostname', 'Name']);
+  if (nodeValue && typeof nodeValue === 'object') {
+    return nodeValue.hostname || nodeValue.name || nodeValue.node || '';
+  }
+  return String(nodeValue || '').trim();
+}
+
 function renderInterfacesTable(target, rows, page = 1) {
   target.classList.remove('hidden');
   if (!rows.length) {
@@ -171,7 +179,7 @@ function renderExplorerTable(target, rows, page = 1) {
   const header = '<tr><th>Hostname</th><th>Properties</th></tr>';
   const body = paged.map((row, idx) => {
     const rowIndex = start + idx;
-    const hostname = getRowValueByAliases(row, ['Node', 'Hostname', 'Name']);
+    const hostname = extractNodeHostname(row);
 
     return `<tr>
       <td>${formatCell(hostname)}</td>
@@ -253,6 +261,46 @@ function renderDetailTable(title, data) {
     .map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`)
     .join('');
   return `<h4>${escapeHtml(title)}</h4><table class="detail-table">${tableBody}</table>`;
+}
+
+function renderExplorerFlyoutContent(nodeHostname, nodeData) {
+  return `
+    <div class="actions" style="margin-bottom:0.75rem;">
+      <button type="button" class="explorer-flyout-interfaces-btn" data-node-hostname="${escapeHtml(nodeHostname)}">interfaces</button>
+    </div>
+    <div id="explorerInterfacesPanel"></div>
+    ${renderDetailTable('Node Properties', nodeData)}
+  `;
+}
+
+function renderExplorerInterfacesTable(rows) {
+  if (!rows.length) {
+    return '<p>No interfaces returned for this node.</p>';
+  }
+
+  const header = '<tr><th>Interface</th><th>Description</th><th>VRF</th><th>Status</th><th>Properties</th></tr>';
+  const body = rows.map((row, idx) => {
+    const iface = getRowValueByAliases(row, ['Interface', 'Interface_Name', 'InterfaceName', 'Name']);
+    const description = getRowValueByAliases(row, ['Description', 'Interface_Description', 'InterfaceDescription']);
+    const vrf = getRowValueByAliases(row, ['VRF', 'Vrf', 'VrfName']);
+    const activeValue = getRowValueByAliases(row, ['Active']);
+    const statusText = activeValue === null || activeValue === undefined ? '' : String(activeValue).trim();
+    const isDown = (typeof activeValue === 'boolean' && activeValue === false)
+      || /down|false|0|inactive|no/i.test(statusText);
+    const statusColor = isDown ? '#c62828' : '#2e7d32';
+    const statusDot = `<span aria-hidden="true" style="display:inline-block;width:0.75rem;height:0.75rem;border-radius:999px;background:${statusColor};margin-right:0.4rem;vertical-align:middle;"></span>`;
+    const statusHtml = `${statusDot}<span>${escapeHtml(statusText || (isDown ? 'down' : 'up'))}</span>`;
+
+    return `<tr>
+      <td>${formatCell(iface)}</td>
+      <td>${formatCell(description)}</td>
+      <td>${formatCell(vrf)}</td>
+      <td>${statusHtml}</td>
+      <td><button type="button" class="explorer-interface-detail-btn" data-explorer-interface-index="${idx}">show details</button></td>
+    </tr>`;
+  }).join('');
+
+  return `<h4>Interfaces</h4><div class="table-wrap"><table>${header}${body}</table></div>`;
 }
 
 function getClientMatchFilters() {
@@ -461,6 +509,7 @@ async function initAnalyzePage() {
   let allRows = [];
   let filteredRows = [];
   let findObjectRows = [];
+  let explorerInterfaceRows = [];
   let snapshotName = '';
   let resultMode = 'analyze';
 
@@ -507,6 +556,14 @@ async function initAnalyzePage() {
     detailFlyoutTitle.textContent = title;
     detailFlyoutBody.innerHTML = renderDetailTable(title, data);
     detailFlyout.classList.remove('hidden');
+  };
+
+  const openExplorerNodeFlyout = (row) => {
+    const nodeHostname = extractNodeHostname(row);
+    detailFlyoutTitle.textContent = 'Node Properties';
+    detailFlyoutBody.innerHTML = renderExplorerFlyoutContent(nodeHostname, row);
+    detailFlyout.classList.remove('hidden');
+    explorerInterfaceRows = [];
   };
 
   detailFlyoutMaximize.addEventListener('click', () => maximizeFlyout(detailFlyout));
@@ -593,7 +650,54 @@ async function initAnalyzePage() {
       return;
     }
 
-    openDetailFlyout('Node Properties', row);
+    openExplorerNodeFlyout(row);
+  });
+
+  detailFlyoutBody.addEventListener('click', async (event) => {
+    const interfacesBtnEl = event.target.closest('.explorer-flyout-interfaces-btn');
+    if (interfacesBtnEl) {
+      try {
+        const nodeHostname = interfacesBtnEl.getAttribute('data-node-hostname') || '';
+        const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
+        const res = await fetch('/api/interfaces', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...folderInfo,
+            node_hostname: nodeHostname,
+          }),
+        });
+        const json = await res.json();
+        if (json.status !== 'success') {
+          throw new Error(json.error?.message || 'Interfaces query failed');
+        }
+
+        explorerInterfaceRows = json.data.rows || [];
+        const panel = detailFlyoutBody.querySelector('#explorerInterfacesPanel');
+        if (panel) {
+          panel.innerHTML = renderExplorerInterfacesTable(explorerInterfaceRows);
+        }
+      } catch (err) {
+        const panel = detailFlyoutBody.querySelector('#explorerInterfacesPanel');
+        if (panel) {
+          panel.innerHTML = `<p>${escapeHtml(err.message)}</p>`;
+        }
+      }
+      return;
+    }
+
+    const interfaceDetailBtnEl = event.target.closest('.explorer-interface-detail-btn');
+    if (!interfaceDetailBtnEl) {
+      return;
+    }
+
+    const index = Number(interfaceDetailBtnEl.getAttribute('data-explorer-interface-index'));
+    const row = explorerInterfaceRows[index];
+    if (!row) {
+      return;
+    }
+
+    openDetailFlyout('Interface Properties', row);
   });
 
   applyClientMatchBtn.addEventListener('click', () => {
