@@ -176,6 +176,65 @@ button:hover {
 .top-gap { margin-top: 12px; }
 .hidden { display: none; }
 
+.analyze-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 14px;
+  align-items: start;
+}
+
+.result-column {
+  min-width: 0;
+}
+
+.detail-flyout {
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+}
+
+.detail-flyout-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.detail-flyout-header h3 {
+  margin: 0;
+}
+
+.detail-flyout-body {
+  display: grid;
+  gap: 10px;
+}
+
+.detail-btn {
+  padding: 6px 10px;
+  font-size: 0.82rem;
+}
+
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.detail-table th,
+.detail-table td {
+  border: 1px solid var(--line);
+  padding: 6px 8px;
+  font-size: 0.88rem;
+  vertical-align: top;
+}
+
+.detail-table th {
+  width: 44%;
+  background: #f8fbfc;
+  color: var(--muted);
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -219,5 +278,14 @@ th {
 
   .grid-2 {
     grid-template-columns: 1fr;
+  }
+
+  .analyze-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-flyout {
+    position: static;
+    max-height: none;
   }
 }

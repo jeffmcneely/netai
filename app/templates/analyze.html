@@ -52,13 +52,38 @@
       </fieldset>
     </details>
 
+    <details id="resultMatchFields" class="top-gap">
+      <summary id="resultMatchFieldsSummary">Additional Match Fields (client-side)</summary>
+      <div id="resultMatchGrid" class="grid-2 top-gap">
+        <label id="matchActionLabel">Action<input id="matchAction" type="text" placeholder="PERMIT"></label>
+        <label id="matchNodeLabel">Node<input id="matchNode" type="text" placeholder="as3border2"></label>
+        <label id="matchFilterNameLabel">Filter Name<input id="matchFilterName" type="text" placeholder="101"></label>
+        <label id="matchLineContentLabel">Line Content<input id="matchLineContent" type="text" placeholder="permit ip host"></label>
+        <label id="matchIngressNodeLabel">Flow ingressNode<input id="matchIngressNode" type="text" placeholder="as3border2"></label>
+        <label id="matchIngressInterfaceLabel">Flow ingressInterface<input id="matchIngressInterface" type="text" placeholder="outside"></label>
+        <label id="matchIngressVrfLabel">Flow ingressVrf<input id="matchIngressVrf" type="text" placeholder="default"></label>
+      </div>
+    </details>
+
     <div id="searchActions" class="actions top-gap">
       <button id="runSearchBtn" type="button">run search</button>
+      <button id="applyClientMatchBtn" type="button">apply match filters</button>
     </div>
   </div>
 
   <div id="analysisMeta" class="card hidden"></div>
-  <div id="results" class="card hidden"></div>
-  <div id="pager" class="actions hidden"></div>
+  <div id="analyzeWorkspace" class="analyze-workspace">
+    <div id="resultColumn" class="result-column">
+      <div id="results" class="card hidden"></div>
+      <div id="pager" class="actions hidden"></div>
+    </div>
+    <aside id="detailFlyout" class="card detail-flyout hidden">
+      <div class="detail-flyout-header">
+        <h3 id="detailFlyoutTitle">Details</h3>
+        <button id="detailFlyoutClose" type="button">close</button>
+      </div>
+      <div id="detailFlyoutBody" class="detail-flyout-body"></div>
+    </aside>
+  </div>
 </section>
 {% endblock %}

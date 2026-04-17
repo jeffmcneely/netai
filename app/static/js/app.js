@@ -45,25 +45,122 @@ function showMessage(target, html) {
   target.innerHTML = html;
 }
 
-function renderTable(target, rows, page = 1) {
+function formatCell(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return escapeHtml(String(value));
+  }
+  return escapeHtml(JSON.stringify(value));
+}
+
+function isFlowValue(value) {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && Object.prototype.hasOwnProperty.call(value, 'srcIp')
+    && Object.prototype.hasOwnProperty.call(value, 'dstIp')
+  );
+}
+
+function isTraceValue(value) {
+  return Array.isArray(value) && value.length > 0;
+}
+
+function renderAnalyzeTable(target, rows, page = 1) {
   target.classList.remove('hidden');
   if (!rows.length) {
     target.innerHTML = '<p>No rows returned.</p>';
     return { pages: 0, page: 0 };
   }
 
-  const columns = Object.keys(rows[0]);
+  const columns = Object.keys(rows[0]).filter((col) => col !== 'Flow' && col !== 'Trace');
   const start = (page - 1) * PAGE_SIZE;
   const paged = rows.slice(start, start + PAGE_SIZE);
 
-  const header = `<tr>${columns.map((col) => `<th>${escapeHtml(col)}</th>`).join('')}</tr>`;
-  const body = paged.map((row) => {
-    const cols = columns.map((col) => `<td>${escapeHtml(String(row[col] ?? ''))}</td>`).join('');
-    return `<tr>${cols}</tr>`;
+  const header = `<tr>${columns.map((col) => `<th>${escapeHtml(col)}</th>`).join('')}<th>Flow</th><th>Trace</th></tr>`;
+  const body = paged.map((row, idx) => {
+    const rowIndex = start + idx;
+    const cols = columns.map((col) => `<td>${formatCell(row[col])}</td>`).join('');
+    const flowButton = isFlowValue(row.Flow)
+      ? `<button type="button" class="detail-btn" data-kind="flow" data-row-index="${rowIndex}">view flow</button>`
+      : '';
+    const traceButton = isTraceValue(row.Trace)
+      ? `<button type="button" class="detail-btn" data-kind="trace" data-row-index="${rowIndex}">view trace</button>`
+      : '';
+    return `<tr>${cols}<td>${flowButton}</td><td>${traceButton}</td></tr>`;
   }).join('');
 
   target.innerHTML = `<div class="table-wrap"><table>${header}${body}</table></div>`;
   return { pages: Math.ceil(rows.length / PAGE_SIZE), page };
+}
+
+function flattenForDetails(value, prefix = '', out = []) {
+  if (value === null || value === undefined) {
+    out.push([prefix || 'value', '']);
+    return out;
+  }
+
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    out.push([prefix || 'value', String(value)]);
+    return out;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      flattenForDetails(item, `${prefix}[${index}]`, out);
+    });
+    return out;
+  }
+
+  Object.entries(value).forEach(([key, item]) => {
+    const nextKey = prefix ? `${prefix}.${key}` : key;
+    flattenForDetails(item, nextKey, out);
+  });
+
+  return out;
+}
+
+function renderDetailTable(title, data) {
+  const rows = flattenForDetails(data);
+  const tableBody = rows
+    .map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`)
+    .join('');
+  return `<h4>${escapeHtml(title)}</h4><table class="detail-table">${tableBody}</table>`;
+}
+
+function getClientMatchFilters() {
+  return {
+    action: (document.getElementById('matchAction')?.value || '').trim().toLowerCase(),
+    node: (document.getElementById('matchNode')?.value || '').trim().toLowerCase(),
+    filterName: (document.getElementById('matchFilterName')?.value || '').trim().toLowerCase(),
+    lineContent: (document.getElementById('matchLineContent')?.value || '').trim().toLowerCase(),
+    ingressNode: (document.getElementById('matchIngressNode')?.value || '').trim().toLowerCase(),
+    ingressInterface: (document.getElementById('matchIngressInterface')?.value || '').trim().toLowerCase(),
+    ingressVrf: (document.getElementById('matchIngressVrf')?.value || '').trim().toLowerCase(),
+  };
+}
+
+function includesMatch(source, needle) {
+  if (!needle) {
+    return true;
+  }
+  return String(source || '').toLowerCase().includes(needle);
+}
+
+function matchesClientFilters(row, filters) {
+  const flow = row.Flow && typeof row.Flow === 'object' ? row.Flow : {};
+  return (
+    includesMatch(row.Action, filters.action)
+    && includesMatch(row.Node, filters.node)
+    && includesMatch(row.Filter_Name, filters.filterName)
+    && includesMatch(row.Line_Content, filters.lineContent)
+    && includesMatch(flow.ingressNode, filters.ingressNode)
+    && includesMatch(flow.ingressInterface, filters.ingressInterface)
+    && includesMatch(flow.ingressVrf, filters.ingressVrf)
+  );
 }
 
 function renderPager(pager, pages, current, onSelect) {
@@ -210,9 +307,18 @@ async function initAnalyzePage() {
   const searchBtn = document.getElementById('searchBtn');
   const searchPanel = document.getElementById('searchPanel');
   const runSearchBtn = document.getElementById('runSearchBtn');
+  const applyClientMatchBtn = document.getElementById('applyClientMatchBtn');
   const meta = document.getElementById('analysisMeta');
   const results = document.getElementById('results');
   const pager = document.getElementById('pager');
+  const detailFlyout = document.getElementById('detailFlyout');
+  const detailFlyoutTitle = document.getElementById('detailFlyoutTitle');
+  const detailFlyoutBody = document.getElementById('detailFlyoutBody');
+  const detailFlyoutClose = document.getElementById('detailFlyoutClose');
+
+  let allRows = [];
+  let filteredRows = [];
+  let snapshotName = '';
 
   const folders = await fetchConfigs();
   folders.forEach((f) => folderList.appendChild(makeFolderRadio(f, 'analyzeFolderChoice')));
@@ -224,10 +330,37 @@ async function initAnalyzePage() {
     }
   });
 
+  const closeDetailFlyout = () => {
+    detailFlyout.classList.add('hidden');
+    detailFlyoutTitle.textContent = 'Details';
+    detailFlyoutBody.innerHTML = '';
+  };
+
+  const openDetailFlyout = (kind, row) => {
+    const data = kind === 'flow' ? row.Flow : row.Trace;
+    if (!data) {
+      return;
+    }
+
+    const title = kind === 'flow' ? 'Flow Details' : 'Trace Details';
+    detailFlyoutTitle.textContent = title;
+    detailFlyoutBody.innerHTML = renderDetailTable(title, data);
+    detailFlyout.classList.remove('hidden');
+  };
+
+  detailFlyoutClose.addEventListener('click', closeDetailFlyout);
+
+  const updateMeta = (visible, total) => {
+    showMessage(
+      meta,
+      `<p>Snapshot: ${escapeHtml(snapshotName || '-')}</p><p>Rows: ${visible} / ${total}</p>`
+    );
+  };
+
   const renderRows = (rows) => {
     let currentPage = 1;
     const draw = () => {
-      const pg = renderTable(results, rows, currentPage);
+      const pg = renderAnalyzeTable(results, rows, currentPage);
       renderPager(pager, pg.pages, currentPage, (newPage) => {
         currentPage = newPage;
         draw();
@@ -235,6 +368,30 @@ async function initAnalyzePage() {
     };
     draw();
   };
+
+  results.addEventListener('click', (event) => {
+    const btn = event.target.closest('.detail-btn');
+    if (!btn) {
+      return;
+    }
+
+    const kind = btn.getAttribute('data-kind');
+    const rowIndex = Number(btn.getAttribute('data-row-index'));
+    const row = filteredRows[rowIndex];
+    if (!row || (kind !== 'flow' && kind !== 'trace')) {
+      return;
+    }
+
+    openDetailFlyout(kind, row);
+  });
+
+  applyClientMatchBtn.addEventListener('click', () => {
+    const filters = getClientMatchFilters();
+    filteredRows = allRows.filter((row) => matchesClientFilters(row, filters));
+    closeDetailFlyout();
+    updateMeta(filteredRows.length, allRows.length);
+    renderRows(filteredRows);
+  });
 
   analyzeBtn.addEventListener('click', async () => {
     try {
@@ -249,8 +406,12 @@ async function initAnalyzePage() {
         throw new Error(json.error?.message || 'Analyze failed');
       }
 
-      showMessage(meta, `<p>Snapshot: ${escapeHtml(json.data.snapshot_name)}</p><p>Rows: ${json.data.rows.length}</p>`);
-      renderRows(json.data.rows);
+      snapshotName = json.data.snapshot_name;
+      allRows = json.data.rows || [];
+      filteredRows = [...allRows];
+      closeDetailFlyout();
+      updateMeta(filteredRows.length, allRows.length);
+      renderRows(filteredRows);
     } catch (err) {
       showMessage(meta, `<p>${escapeHtml(err.message)}</p>`);
     }
@@ -278,8 +439,12 @@ async function initAnalyzePage() {
         throw new Error(json.error?.message || 'Search failed');
       }
 
-      showMessage(meta, `<p>Snapshot: ${escapeHtml(json.data.snapshot_name)}</p><p>Rows: ${json.data.rows.length}</p>`);
-      renderRows(json.data.rows);
+      snapshotName = json.data.snapshot_name;
+      allRows = json.data.rows || [];
+      filteredRows = [...allRows];
+      closeDetailFlyout();
+      updateMeta(filteredRows.length, allRows.length);
+      renderRows(filteredRows);
     } catch (err) {
       showMessage(meta, `<p>${escapeHtml(err.message)}</p>`);
     }
