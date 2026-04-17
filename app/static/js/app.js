@@ -370,9 +370,13 @@ async function initAnalyzePage() {
   const detailFlyout = document.getElementById('detailFlyout');
   const detailFlyoutTitle = document.getElementById('detailFlyoutTitle');
   const detailFlyoutBody = document.getElementById('detailFlyoutBody');
+  const detailFlyoutMaximize = document.getElementById('detailFlyoutMaximize');
+  const detailFlyoutMinimize = document.getElementById('detailFlyoutMinimize');
   const detailFlyoutClose = document.getElementById('detailFlyoutClose');
   const fileViewerFlyout = document.getElementById('fileViewerFlyout');
   const fileViewerFlyoutBody = document.getElementById('fileViewerFlyoutBody');
+  const fileViewerFlyoutMaximize = document.getElementById('fileViewerFlyoutMaximize');
+  const fileViewerFlyoutMinimize = document.getElementById('fileViewerFlyoutMinimize');
   const fileViewerFlyoutClose = document.getElementById('fileViewerFlyoutClose');
 
   let allRows = [];
@@ -393,13 +397,24 @@ async function initAnalyzePage() {
 
   syncSelectedRadioRows('analyzeFolderChoice');
 
+  const maximizeFlyout = (flyout) => {
+    flyout.classList.remove('hidden');
+    flyout.classList.add('is-maximized');
+  };
+
+  const minimizeFlyout = (flyout) => {
+    flyout.classList.remove('is-maximized');
+  };
+
   const closeDetailFlyout = () => {
+    minimizeFlyout(detailFlyout);
     detailFlyout.classList.add('hidden');
     detailFlyoutTitle.textContent = 'Details';
     detailFlyoutBody.innerHTML = '';
   };
 
   const closeFileViewerFlyout = () => {
+    minimizeFlyout(fileViewerFlyout);
     fileViewerFlyout.classList.add('hidden');
     fileViewerFlyoutBody.innerHTML = '';
   };
@@ -416,7 +431,11 @@ async function initAnalyzePage() {
     detailFlyout.classList.remove('hidden');
   };
 
+  detailFlyoutMaximize.addEventListener('click', () => maximizeFlyout(detailFlyout));
+  detailFlyoutMinimize.addEventListener('click', () => minimizeFlyout(detailFlyout));
   detailFlyoutClose.addEventListener('click', closeDetailFlyout);
+  fileViewerFlyoutMaximize.addEventListener('click', () => maximizeFlyout(fileViewerFlyout));
+  fileViewerFlyoutMinimize.addEventListener('click', () => minimizeFlyout(fileViewerFlyout));
   fileViewerFlyoutClose.addEventListener('click', closeFileViewerFlyout);
 
   const updateMeta = (visible, total) => {

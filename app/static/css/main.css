@@ -113,6 +113,7 @@ body {
 
 .content-panel {
   padding: 24px;
+  position: relative;
 }
 
 .page {
@@ -264,6 +265,100 @@ button:hover {
   align-items: center;
   gap: 10px;
   margin-bottom: 10px;
+}
+
+.flyout-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.flyout-control {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  position: relative;
+}
+
+.flyout-control .flyout-icon {
+  display: block;
+  width: 12px;
+  height: 12px;
+  position: relative;
+}
+
+.flyout-control-maximize {
+  background: #1a9f6e;
+}
+
+.flyout-control-maximize:hover {
+  background: #147d56;
+}
+
+.flyout-control-maximize .flyout-icon {
+  border: 2px solid #ffffff;
+  border-radius: 2px;
+}
+
+.flyout-control-minimize {
+  background: #d1a20f;
+}
+
+.flyout-control-minimize:hover {
+  background: #ac8409;
+}
+
+.flyout-control-minimize .flyout-icon::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 2px;
+  height: 2px;
+  background: #ffffff;
+  border-radius: 1px;
+}
+
+.flyout-control-close {
+  background: #bf4038;
+}
+
+.flyout-control-close:hover {
+  background: #992d26;
+}
+
+.flyout-control-close .flyout-icon::before,
+.flyout-control-close .flyout-icon::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 5px;
+  width: 2px;
+  height: 12px;
+  background: #ffffff;
+  border-radius: 1px;
+}
+
+.flyout-control-close .flyout-icon::before {
+  transform: rotate(45deg);
+}
+
+.flyout-control-close .flyout-icon::after {
+  transform: rotate(-45deg);
+}
+
+.detail-flyout.is-maximized {
+  position: absolute;
+  inset: 0;
+  top: 0;
+  z-index: 40;
+  max-height: none;
+  height: 100%;
+  margin: 0;
+  border-radius: 10px;
 }
 
 .detail-flyout-header h3 {

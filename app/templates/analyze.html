@@ -93,14 +93,34 @@
     <aside id="detailFlyout" class="card detail-flyout hidden">
       <div class="detail-flyout-header">
         <h3 id="detailFlyoutTitle">Details</h3>
-        <button id="detailFlyoutClose" type="button">close</button>
+        <div class="flyout-controls" role="group" aria-label="Detail panel controls">
+          <button id="detailFlyoutMaximize" class="flyout-control flyout-control-maximize" type="button" aria-label="Maximize" title="Maximize">
+            <span class="flyout-icon" aria-hidden="true"></span>
+          </button>
+          <button id="detailFlyoutMinimize" class="flyout-control flyout-control-minimize" type="button" aria-label="Minimize" title="Minimize">
+            <span class="flyout-icon" aria-hidden="true"></span>
+          </button>
+          <button id="detailFlyoutClose" class="flyout-control flyout-control-close" type="button" aria-label="Close" title="Close">
+            <span class="flyout-icon" aria-hidden="true"></span>
+          </button>
+        </div>
       </div>
       <div id="detailFlyoutBody" class="detail-flyout-body"></div>
     </aside>
     <aside id="fileViewerFlyout" class="card detail-flyout hidden">
       <div class="detail-flyout-header">
         <h3 id="fileViewerFlyoutTitle">File Viewer</h3>
-        <button id="fileViewerFlyoutClose" type="button">close</button>
+        <div class="flyout-controls" role="group" aria-label="File viewer controls">
+          <button id="fileViewerFlyoutMaximize" class="flyout-control flyout-control-maximize" type="button" aria-label="Maximize" title="Maximize">
+            <span class="flyout-icon" aria-hidden="true"></span>
+          </button>
+          <button id="fileViewerFlyoutMinimize" class="flyout-control flyout-control-minimize" type="button" aria-label="Minimize" title="Minimize">
+            <span class="flyout-icon" aria-hidden="true"></span>
+          </button>
+          <button id="fileViewerFlyoutClose" class="flyout-control flyout-control-close" type="button" aria-label="Close" title="Close">
+            <span class="flyout-icon" aria-hidden="true"></span>
+          </button>
+        </div>
       </div>
       <div id="fileViewerFlyoutBody" class="detail-flyout-body"></div>
     </aside>
