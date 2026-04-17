@@ -122,6 +122,20 @@ class BatfishManager:
         frame = query.answer().frame()
         return _frame_to_records(frame)
 
+    def run_interface_properties(self) -> List[Dict[str, object]]:
+        bf = self._session()
+        query = bf.q.interfaceProperties()
+        logger.debug("Sending Batfish query host=%s query=%s", self.server, "interfaceProperties")
+        frame = query.answer().frame()
+        return _frame_to_records(frame)
+
+    def run_node_properties(self) -> List[Dict[str, object]]:
+        bf = self._session()
+        query = bf.q.nodeProperties()
+        logger.debug("Sending Batfish query host=%s query=%s", self.server, "nodeProperties")
+        frame = query.answer().frame()
+        return _frame_to_records(frame)
+
 
 def build_header_constraints(filters: Dict[str, object]) -> Optional[object]:
     if not filters:

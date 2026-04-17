@@ -178,6 +178,42 @@ def search():
         return fail(str(exc), "SEARCH_ERROR", status=500)
 
 
+@api_bp.post("/interfaces")
+def interfaces():
+    try:
+        payload = request.get_json(force=True)
+        config_folder = _resolve_config_folder(payload)
+
+        s3 = _s3_manager()
+        bf = _batfish_manager()
+        snapshot_name = bf.init_snapshot(s3.get_snapshot_zip_data(config_folder), config_folder)
+        rows = bf.run_interface_properties()
+
+        return ok({"snapshot_name": snapshot_name, "rows": rows})
+    except ValidationError as exc:
+        return fail(str(exc), "VALIDATION_ERROR", status=400)
+    except Exception as exc:
+        return fail(str(exc), "INTERFACES_ERROR", status=500)
+
+
+@api_bp.post("/explorer")
+def explorer():
+    try:
+        payload = request.get_json(force=True)
+        config_folder = _resolve_config_folder(payload)
+
+        s3 = _s3_manager()
+        bf = _batfish_manager()
+        snapshot_name = bf.init_snapshot(s3.get_snapshot_zip_data(config_folder), config_folder)
+        rows = bf.run_node_properties()
+
+        return ok({"snapshot_name": snapshot_name, "rows": rows})
+    except ValidationError as exc:
+        return fail(str(exc), "VALIDATION_ERROR", status=400)
+    except Exception as exc:
+        return fail(str(exc), "EXPLORER_ERROR", status=500)
+
+
 @api_bp.post("/find-object")
 def find_object():
     try:

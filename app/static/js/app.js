@@ -106,6 +106,83 @@ function renderAnalyzeTable(target, rows, page = 1) {
   return { pages: Math.ceil(rows.length / PAGE_SIZE), page };
 }
 
+function normalizeColumnName(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function getRowValueByAliases(row, aliases) {
+  const entries = Object.entries(row || {});
+  const aliasSet = new Set(aliases.map((alias) => normalizeColumnName(alias)));
+
+  for (const [key, value] of entries) {
+    if (aliasSet.has(normalizeColumnName(key))) {
+      return value;
+    }
+  }
+
+  return '';
+}
+
+function renderInterfacesTable(target, rows, page = 1) {
+  target.classList.remove('hidden');
+  if (!rows.length) {
+    target.innerHTML = '<p>No interfaces returned.</p>';
+    return { pages: 0, page: 0 };
+  }
+
+  const start = (page - 1) * PAGE_SIZE;
+  const paged = rows.slice(start, start + PAGE_SIZE);
+  const header = '<tr><th>Interface</th><th>Description</th><th>VRF</th><th>Status</th><th>Properties</th></tr>';
+  const body = paged.map((row, idx) => {
+    const rowIndex = start + idx;
+    const iface = getRowValueByAliases(row, ['Interface', 'Interface_Name', 'InterfaceName', 'Name']);
+    const description = getRowValueByAliases(row, ['Description', 'Interface_Description', 'InterfaceDescription']);
+    const vrf = getRowValueByAliases(row, ['VRF', 'Vrf', 'VrfName']);
+    const activeValue = getRowValueByAliases(row, ['Active']);
+    const statusText = activeValue === null || activeValue === undefined ? '' : String(activeValue).trim();
+    const isDown = (typeof activeValue === 'boolean' && activeValue === false)
+      || /down|false|0|inactive|no/i.test(statusText);
+    const statusColor = isDown ? '#c62828' : '#2e7d32';
+    const statusDot = `<span aria-hidden="true" style="display:inline-block;width:0.75rem;height:0.75rem;border-radius:999px;background:${statusColor};margin-right:0.4rem;vertical-align:middle;"></span>`;
+    const statusHtml = `${statusDot}<span>${escapeHtml(statusText || (isDown ? 'down' : 'up'))}</span>`;
+
+    return `<tr>
+      <td>${formatCell(iface)}</td>
+      <td>${formatCell(description)}</td>
+      <td>${formatCell(vrf)}</td>
+      <td>${statusHtml}</td>
+      <td><button type="button" class="interface-detail-btn" data-interface-row-index="${rowIndex}">full properties</button></td>
+    </tr>`;
+  }).join('');
+
+  target.innerHTML = `<div class="table-wrap"><table>${header}${body}</table></div>`;
+  return { pages: Math.ceil(rows.length / PAGE_SIZE), page };
+}
+
+function renderExplorerTable(target, rows, page = 1) {
+  target.classList.remove('hidden');
+  if (!rows.length) {
+    target.innerHTML = '<p>No nodes returned.</p>';
+    return { pages: 0, page: 0 };
+  }
+
+  const start = (page - 1) * PAGE_SIZE;
+  const paged = rows.slice(start, start + PAGE_SIZE);
+  const header = '<tr><th>Hostname</th><th>Properties</th></tr>';
+  const body = paged.map((row, idx) => {
+    const rowIndex = start + idx;
+    const hostname = getRowValueByAliases(row, ['Node', 'Hostname', 'Name']);
+
+    return `<tr>
+      <td>${formatCell(hostname)}</td>
+      <td><button type="button" class="explorer-detail-btn" data-explorer-row-index="${rowIndex}">show details</button></td>
+    </tr>`;
+  }).join('');
+
+  target.innerHTML = `<div class="table-wrap"><table>${header}${body}</table></div>`;
+  return { pages: Math.ceil(rows.length / PAGE_SIZE), page };
+}
+
 function renderFindObjectTable(target, rows, page = 1) {
   target.classList.remove('hidden');
   if (!rows.length) {
@@ -355,6 +432,8 @@ async function initAnalyzePage() {
   const newField = document.getElementById('analyzeNewFolderName');
   const analyzeBtn = document.getElementById('analyzeBtn');
   const searchBtn = document.getElementById('searchBtn');
+  const interfacesBtn = document.getElementById('interfacesBtn');
+  const explorerBtn = document.getElementById('explorerBtn');
   const findObjectBtn = document.getElementById('findObjectBtn');
   const searchPanel = document.getElementById('searchPanel');
   const findObjectPanel = document.getElementById('findObjectPanel');
@@ -383,6 +462,7 @@ async function initAnalyzePage() {
   let filteredRows = [];
   let findObjectRows = [];
   let snapshotName = '';
+  let resultMode = 'analyze';
 
   const folders = await fetchConfigs();
   folders.forEach((f) => folderList.appendChild(makeFolderRadio(f, 'analyzeFolderChoice')));
@@ -419,13 +499,11 @@ async function initAnalyzePage() {
     fileViewerFlyoutBody.innerHTML = '';
   };
 
-  const openDetailFlyout = (kind, row) => {
-    const data = kind === 'flow' ? row.Flow : row.Trace;
+  const openDetailFlyout = (title, data) => {
     if (!data) {
       return;
     }
 
-    const title = kind === 'flow' ? 'Flow Details' : 'Trace Details';
     detailFlyoutTitle.textContent = title;
     detailFlyoutBody.innerHTML = renderDetailTable(title, data);
     detailFlyout.classList.remove('hidden');
@@ -448,7 +526,14 @@ async function initAnalyzePage() {
   const renderRows = (rows) => {
     let currentPage = 1;
     const draw = () => {
-      const pg = renderAnalyzeTable(results, rows, currentPage);
+      let pg;
+      if (resultMode === 'interfaces') {
+        pg = renderInterfacesTable(results, rows, currentPage);
+      } else if (resultMode === 'explorer') {
+        pg = renderExplorerTable(results, rows, currentPage);
+      } else {
+        pg = renderAnalyzeTable(results, rows, currentPage);
+      }
       renderPager(pager, pg.pages, currentPage, (newPage) => {
         currentPage = newPage;
         draw();
@@ -470,22 +555,53 @@ async function initAnalyzePage() {
   };
 
   results.addEventListener('click', (event) => {
-    const btn = event.target.closest('.detail-btn');
-    if (!btn) {
+    const detailBtn = event.target.closest('.detail-btn');
+    if (detailBtn) {
+      const kind = detailBtn.getAttribute('data-kind');
+      const rowIndex = Number(detailBtn.getAttribute('data-row-index'));
+      const row = filteredRows[rowIndex];
+      if (!row || (kind !== 'flow' && kind !== 'trace')) {
+        return;
+      }
+
+      const title = kind === 'flow' ? 'Flow Details' : 'Trace Details';
+      const data = kind === 'flow' ? row.Flow : row.Trace;
+      openDetailFlyout(title, data);
       return;
     }
 
-    const kind = btn.getAttribute('data-kind');
-    const rowIndex = Number(btn.getAttribute('data-row-index'));
+    const interfaceBtn = event.target.closest('.interface-detail-btn');
+    if (interfaceBtn) {
+      const rowIndex = Number(interfaceBtn.getAttribute('data-interface-row-index'));
+      const row = filteredRows[rowIndex];
+      if (!row) {
+        return;
+      }
+
+      openDetailFlyout('Interface Properties', row);
+      return;
+    }
+
+    const explorerBtnEl = event.target.closest('.explorer-detail-btn');
+    if (!explorerBtnEl) {
+      return;
+    }
+
+    const rowIndex = Number(explorerBtnEl.getAttribute('data-explorer-row-index'));
     const row = filteredRows[rowIndex];
-    if (!row || (kind !== 'flow' && kind !== 'trace')) {
+    if (!row) {
       return;
     }
 
-    openDetailFlyout(kind, row);
+    openDetailFlyout('Node Properties', row);
   });
 
   applyClientMatchBtn.addEventListener('click', () => {
+    if (resultMode !== 'analyze') {
+      showMessage(meta, '<p>Client match filters only apply to analyze/find flow results.</p>');
+      return;
+    }
+
     const filters = getClientMatchFilters();
     filteredRows = allRows.filter((row) => matchesClientFilters(row, filters));
     closeDetailFlyout();
@@ -549,6 +665,59 @@ async function initAnalyzePage() {
       }
 
       snapshotName = json.data.snapshot_name;
+      resultMode = 'analyze';
+      allRows = json.data.rows || [];
+      filteredRows = [...allRows];
+      closeDetailFlyout();
+      closeFileViewerFlyout();
+      updateMeta(filteredRows.length, allRows.length);
+      renderRows(filteredRows);
+    } catch (err) {
+      showMessage(meta, `<p>${escapeHtml(err.message)}</p>`);
+    }
+  });
+
+  interfacesBtn.addEventListener('click', async () => {
+    try {
+      const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
+      const res = await fetch('/api/interfaces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(folderInfo),
+      });
+      const json = await res.json();
+      if (json.status !== 'success') {
+        throw new Error(json.error?.message || 'Interfaces query failed');
+      }
+
+      snapshotName = json.data.snapshot_name;
+      resultMode = 'interfaces';
+      allRows = json.data.rows || [];
+      filteredRows = [...allRows];
+      closeDetailFlyout();
+      closeFileViewerFlyout();
+      updateMeta(filteredRows.length, allRows.length);
+      renderRows(filteredRows);
+    } catch (err) {
+      showMessage(meta, `<p>${escapeHtml(err.message)}</p>`);
+    }
+  });
+
+  explorerBtn.addEventListener('click', async () => {
+    try {
+      const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
+      const res = await fetch('/api/explorer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(folderInfo),
+      });
+      const json = await res.json();
+      if (json.status !== 'success') {
+        throw new Error(json.error?.message || 'Explorer query failed');
+      }
+
+      snapshotName = json.data.snapshot_name;
+      resultMode = 'explorer';
       allRows = json.data.rows || [];
       filteredRows = [...allRows];
       closeDetailFlyout();
@@ -620,6 +789,7 @@ async function initAnalyzePage() {
       }
 
       snapshotName = json.data.snapshot_name;
+      resultMode = 'analyze';
       allRows = json.data.rows || [];
       filteredRows = [...allRows];
       closeDetailFlyout();
