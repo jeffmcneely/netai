@@ -1,0 +1,223 @@
+:root {
+  --bg: #f5f3ee;
+  --panel: #1f2a30;
+  --panel-accent: #2f4650;
+  --surface: #ffffff;
+  --text: #1c252a;
+  --muted: #6d7880;
+  --line: #d7dee2;
+  --primary: #c8562e;
+  --primary-2: #8f3216;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: radial-gradient(circle at 15% 20%, #ffffff 0%, var(--bg) 55%, #e8dfd2 100%);
+  color: var(--text);
+  font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 240px 1fr;
+}
+
+.nav-panel {
+  background: linear-gradient(180deg, var(--panel) 0%, #152026 100%);
+  color: #f5f7f8;
+  padding: 24px 16px;
+}
+
+.brand {
+  margin: 0 0 24px 0;
+  font-size: 1.7rem;
+  letter-spacing: 0.04em;
+}
+
+.nav-link {
+  display: block;
+  margin: 8px 0;
+  padding: 10px 12px;
+  color: #f3f5f6;
+  text-decoration: none;
+  border-radius: 8px;
+  background: transparent;
+  transition: background 180ms ease;
+}
+
+.nav-link:hover {
+  background: var(--panel-accent);
+}
+
+.nav-panel nav {
+  margin-bottom: 14px;
+}
+
+.nav-section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(243, 245, 246, 0.22);
+}
+
+.nav-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.nav-actions button {
+  width: 100%;
+}
+
+.nav-config h3 {
+  margin: 0 0 10px 0;
+  font-size: 0.9rem;
+  letter-spacing: 0.03em;
+  color: #f3f5f6;
+}
+
+.nav-panel .radio-row span {
+  color: #f3f5f6;
+}
+
+.nav-panel .text-input,
+.nav-panel input[type="text"] {
+  background: rgba(21, 32, 38, 0.72);
+  color: #f5f7f8;
+  border-color: rgba(243, 245, 246, 0.28);
+}
+
+.nav-panel .text-input::placeholder,
+.nav-panel input[type="text"]::placeholder {
+  color: rgba(245, 247, 248, 0.72);
+}
+
+.content-panel {
+  padding: 24px;
+}
+
+.page {
+  max-width: 1200px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+  margin: 14px 0;
+}
+
+.folder-list {
+  display: grid;
+  gap: 8px;
+}
+
+.radio-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+}
+
+.text-input,
+input[type="text"] {
+  margin-top: 8px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.drop-zone {
+  margin-top: 14px;
+  border: 2px dashed var(--primary);
+  background: linear-gradient(180deg, #fff8f4 0%, #fff 100%);
+  border-radius: 16px;
+  min-height: 220px;
+  display: grid;
+  place-content: center;
+  cursor: pointer;
+  text-align: center;
+}
+
+.drop-zone.active {
+  border-color: var(--primary-2);
+  background: #ffe8dd;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+button {
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button:hover {
+  background: var(--primary-2);
+}
+
+.grid-2 {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+}
+
+.top-gap { margin-top: 12px; }
+.hidden { display: none; }
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.93rem;
+}
+
+th, td {
+  border: 1px solid var(--line);
+  padding: 8px;
+  text-align: left;
+}
+
+th {
+  background: #f2f7f9;
+}
+
+.tcp-flags {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .nav-panel {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}

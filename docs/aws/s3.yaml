@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: NetAI S3 bucket and role
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: Name of the S3 bucket for NetAI
+
+Resources:
+  NetAIBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      Tags:
+        - Key: project
+          Value: netai
+
+  RoleNetAI:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: RoleNetAI
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: "*"
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: NetAIBucketReadWrite
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub "${NetAIBucket.Arn}/*"
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt NetAIBucket.Arn
+
+Outputs:
+  NetAIBucketName:
+    Description: Name of NetAI S3 bucket
+    Value: !Ref NetAIBucket
+
+  RoleNetAIArn:
+    Description: ARN of RoleNetAI
+    Value: !GetAtt RoleNetAI.Arn

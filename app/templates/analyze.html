@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+
+{% block nav_panel_extras %}
+<div class="nav-section nav-actions" id="analyzeActionSection">
+  <button id="analyzeBtn" type="button">analyze</button>
+  <button id="searchBtn" type="button">search</button>
+</div>
+
+<div class="nav-section nav-config" id="analyzeConfigSection">
+  <h3 id="analyzeConfigHeading">Config Folder</h3>
+  <div id="analyzeFolderList" class="folder-list"></div>
+  <label id="analyzeFolderChoiceNewLabel" class="radio-row">
+    <input type="radio" name="analyzeFolderChoice" value="__new__" id="analyzeFolderChoiceNew">
+    <span id="analyzeFolderChoiceNewText">new</span>
+  </label>
+  <input id="analyzeNewFolderName" type="text" placeholder="new-folder-name" class="text-input hidden">
+</div>
+{% endblock %}
+
+{% block content %}
+<section id="analyzePage" class="page">
+  <h2 id="analyzePageHeading">Analyze</h2>
+
+  <div id="searchPanel" class="card hidden">
+    <h3 id="searchPanelHeading">Search Filters</h3>
+    <div id="searchFilterGrid" class="grid-2">
+      <label id="srcIpsLabel">srcIps<input id="srcIps" type="text" placeholder="10.0.0.0/8,192.168.1.1"></label>
+      <label id="dstIpsLabel">dstIps<input id="dstIps" type="text" placeholder="8.8.8.8"></label>
+      <label id="srcPortsLabel">srcPorts<input id="srcPorts" type="text" placeholder="22,53-99"></label>
+      <label id="dstPortsLabel">dstPorts<input id="dstPorts" type="text" placeholder="22,53-99"></label>
+      <label id="applicationsLabel">applications<input id="applications" type="text" placeholder="SSH, DNS, SNMP"></label>
+      <label id="ipProtocolsLabel">ipProtocols<input id="ipProtocols" type="text" placeholder="TCP, UDP, ICMP"></label>
+    </div>
+
+    <details id="advancedPacketFields">
+      <summary id="advancedPacketFieldsSummary">Advanced Packet Fields</summary>
+      <div id="advancedFilterGrid" class="grid-2 top-gap">
+        <label id="icmpCodesLabel">icmpCodes<input id="icmpCodes" type="text" placeholder="0,3"></label>
+        <label id="icmpTypesLabel">icmpTypes<input id="icmpTypes" type="text" placeholder="8,11"></label>
+        <label id="dscpsLabel">dscps<input id="dscps" type="text" placeholder="0,16"></label>
+        <label id="ecnsLabel">ecns<input id="ecns" type="text" placeholder="0,1"></label>
+        <label id="packetLengthsLabel">packetLengths<input id="packetLengths" type="text" placeholder="64,1500"></label>
+        <label id="fragmentOffsetsLabel">fragmentOffsets<input id="fragmentOffsets" type="text" placeholder="0,128"></label>
+      </div>
+      <fieldset id="tcpFlagsFieldset" class="tcp-flags">
+        <legend id="tcpFlagsLegend">tcpFlags</legend>
+        <label id="tcpFlagAckLabel"><input type="checkbox" value="ack" class="tcp-flag">ack</label>
+        <label id="tcpFlagEstLabel"><input type="checkbox" value="est" class="tcp-flag">est</label>
+        <label id="tcpFlagRstLabel"><input type="checkbox" value="rst" class="tcp-flag">rst</label>
+        <label id="tcpFlagSynLabel"><input type="checkbox" value="syn" class="tcp-flag">syn</label>
+        <label id="tcpFlagSynAckLabel"><input type="checkbox" value="synack" class="tcp-flag">synack</label>
+      </fieldset>
+    </details>
+
+    <div id="searchActions" class="actions top-gap">
+      <button id="runSearchBtn" type="button">run search</button>
+    </div>
+  </div>
+
+  <div id="analysisMeta" class="card hidden"></div>
+  <div id="results" class="card hidden"></div>
+  <div id="pager" class="actions hidden"></div>
+</section>
+{% endblock %}

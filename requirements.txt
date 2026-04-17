@@ -1,0 +1,6 @@
+Flask==3.0.3
+boto3==1.35.24
+pybatfish==2025.7.7.2423
+pandas==2.2.2
+gunicorn==22.0.0
+python-dotenv==1.0.1

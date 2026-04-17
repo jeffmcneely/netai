@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta id="metaCharset" charset="utf-8">
+  <meta id="metaViewport" name="viewport" content="width=device-width, initial-scale=1">
+  <title id="appTitle">NetAI</title>
+  <link id="mainStylesheet" rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body id="appBody">
+  <div id="appShell" class="app-shell">
+    <aside id="appNavPanel" class="nav-panel">
+      <h1 id="appBrand" class="brand">NetAI</h1>
+      <nav id="primaryNav">
+        <a id="navUploadLink" href="{{ url_for('ui.index_page') }}" class="nav-link">upload</a>
+        <a id="navAnalyzeLink" href="{{ url_for('ui.analyze_page') }}" class="nav-link">analyze</a>
+      </nav>
+      {% block nav_panel_extras %}{% endblock %}
+    </aside>
+    <main id="contentPanel" class="content-panel">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script id="mainScript" src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

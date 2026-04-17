@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+
+{% block nav_panel_extras %}
+<div id="uploadConfigSection" class="nav-section nav-config">
+  <h3 id="uploadConfigHeading">Config Folder</h3>
+  <div id="folderList" class="folder-list"></div>
+  <label id="folderChoiceNewLabel" class="radio-row">
+    <input type="radio" name="folderChoice" value="__new__" id="folderChoiceNew">
+    <span id="folderChoiceNewText">new</span>
+  </label>
+  <input id="newFolderName" type="text" placeholder="new-folder-name" class="text-input hidden">
+</div>
+{% endblock %}
+
+{% block content %}
+<section id="uploadPage" class="page">
+  <h2 id="uploadPageHeading">Upload Configs</h2>
+
+  <div id="dropZone" class="drop-zone" aria-label="drag and drop files">
+    <p id="dropZoneLine1">Drag and drop files here</p>
+    <p id="dropZoneLine2">or click to browse</p>
+    <input id="fileInput" type="file" multiple class="hidden">
+  </div>
+
+  <div id="uploadStatus" class="card hidden"></div>
+</section>
+{% endblock %}
