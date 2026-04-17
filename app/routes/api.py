@@ -71,6 +71,17 @@ def _normalize_search_filters(raw: dict) -> dict:
     return normalized
 
 
+def _normalize_acl_filter_name(raw_value: object) -> str:
+    filter_name = str(raw_value or "").strip()
+    if not filter_name:
+        raise ValidationError("filter_name is required")
+
+    if filter_name.isdigit():
+        return f"/^{filter_name}/"
+
+    return filter_name
+
+
 def _parse_find_object_payload(payload: dict) -> tuple[str, str, int]:
     if payload is None:
         raise ValidationError("JSON payload is required")
@@ -240,12 +251,10 @@ def node_acl_search():
         payload = request.get_json(force=True)
         config_folder = _resolve_config_folder(payload)
         node_hostname = str(payload.get("node_hostname", "")).strip()
-        filter_name = str(payload.get("filter_name", "")).strip()
+        filter_name = _normalize_acl_filter_name(payload.get("filter_name"))
 
         if not node_hostname:
             raise ValidationError("node_hostname is required")
-        if not filter_name:
-            raise ValidationError("filter_name is required")
 
         s3 = _s3_manager()
         bf = _batfish_manager()
