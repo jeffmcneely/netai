@@ -263,13 +263,43 @@ function renderDetailTable(title, data) {
   return `<h4>${escapeHtml(title)}</h4><table class="detail-table">${tableBody}</table>`;
 }
 
+function renderNodePropertySelectionTable(nodeHostname, nodeData) {
+  const rows = flattenForDetails(nodeData);
+  const tableBody = rows
+    .map(([k, v]) => {
+      const canSearchAcl = /^IP_Access_Lists\[\d+\]$/.test(k) && String(v || '').trim().length > 0;
+      const action = canSearchAcl
+        ? `<button type="button" class="explorer-acl-search-btn" data-node-hostname="${escapeHtml(nodeHostname)}" data-filter-name="${escapeHtml(String(v))}">search filters</button>`
+        : '';
+      return `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td><td>${action}</td></tr>`;
+    })
+    .join('');
+  return `<h4>Node Properties</h4><table class="detail-table"><tr><th>Property</th><th>Value</th><th>Action</th></tr>${tableBody}</table>`;
+}
+
+function renderAclSearchResultsTable(rows) {
+  if (!rows.length) {
+    return '<p>No ACL search results returned.</p>';
+  }
+
+  const columns = Object.keys(rows[0]);
+  const header = `<tr>${columns.map((col) => `<th>${escapeHtml(col)}</th>`).join('')}</tr>`;
+  const body = rows.map((row) => {
+    const cells = columns.map((col) => `<td>${formatCell(row[col])}</td>`).join('');
+    return `<tr>${cells}</tr>`;
+  }).join('');
+
+  return `<h4>ACL Search Results</h4><div class="table-wrap"><table>${header}${body}</table></div>`;
+}
+
 function renderExplorerFlyoutContent(nodeHostname, nodeData) {
   return `
     <div class="actions" style="margin-bottom:0.75rem;">
       <button type="button" class="explorer-flyout-interfaces-btn" data-node-hostname="${escapeHtml(nodeHostname)}">interfaces</button>
+      <button type="button" class="explorer-flyout-vlans-btn" data-node-hostname="${escapeHtml(nodeHostname)}">vlans</button>
     </div>
-    <div id="explorerInterfacesPanel"></div>
-    ${renderDetailTable('Node Properties', nodeData)}
+    <p>Use interfaces or vlans to load node data in the right flyout.</p>
+    ${renderNodePropertySelectionTable(nodeHostname, nodeData)}
   `;
 }
 
@@ -301,6 +331,21 @@ function renderExplorerInterfacesTable(rows) {
   }).join('');
 
   return `<h4>Interfaces</h4><div class="table-wrap"><table>${header}${body}</table></div>`;
+}
+
+function renderExplorerVlansTable(rows) {
+  if (!rows.length) {
+    return '<p>No VLANs returned for this node.</p>';
+  }
+
+  const columns = Object.keys(rows[0]);
+  const header = `<tr>${columns.map((col) => `<th>${escapeHtml(col)}</th>`).join('')}<th>Properties</th></tr>`;
+  const body = rows.map((row, idx) => {
+    const cells = columns.map((col) => `<td>${formatCell(row[col])}</td>`).join('');
+    return `<tr>${cells}<td><button type="button" class="explorer-vlan-detail-btn" data-explorer-vlan-index="${idx}">show details</button></td></tr>`;
+  }).join('');
+
+  return `<h4>VLANs</h4><div class="table-wrap"><table>${header}${body}</table></div>`;
 }
 
 function getClientMatchFilters() {
@@ -480,7 +525,6 @@ async function initAnalyzePage() {
   const newField = document.getElementById('analyzeNewFolderName');
   const analyzeBtn = document.getElementById('analyzeBtn');
   const searchBtn = document.getElementById('searchBtn');
-  const interfacesBtn = document.getElementById('interfacesBtn');
   const explorerBtn = document.getElementById('explorerBtn');
   const findObjectBtn = document.getElementById('findObjectBtn');
   const searchPanel = document.getElementById('searchPanel');
@@ -510,6 +554,7 @@ async function initAnalyzePage() {
   let filteredRows = [];
   let findObjectRows = [];
   let explorerInterfaceRows = [];
+  let explorerVlanRows = [];
   let snapshotName = '';
   let resultMode = 'analyze';
 
@@ -545,6 +590,10 @@ async function initAnalyzePage() {
   const closeFileViewerFlyout = () => {
     minimizeFlyout(fileViewerFlyout);
     fileViewerFlyout.classList.add('hidden');
+    const fileViewerTitle = document.getElementById('fileViewerFlyoutTitle');
+    if (fileViewerTitle) {
+      fileViewerTitle.textContent = 'File Viewer';
+    }
     fileViewerFlyoutBody.innerHTML = '';
   };
 
@@ -560,10 +609,17 @@ async function initAnalyzePage() {
 
   const openExplorerNodeFlyout = (row) => {
     const nodeHostname = extractNodeHostname(row);
-    detailFlyoutTitle.textContent = 'Node Properties';
+    detailFlyoutTitle.textContent = 'Node Property Selection';
     detailFlyoutBody.innerHTML = renderExplorerFlyoutContent(nodeHostname, row);
     detailFlyout.classList.remove('hidden');
+    fileViewerFlyout.classList.remove('hidden');
+    const fileViewerTitle = document.getElementById('fileViewerFlyoutTitle');
+    if (fileViewerTitle) {
+      fileViewerTitle.textContent = 'Interfaces';
+    }
+    fileViewerFlyoutBody.innerHTML = '<p>Select interfaces or vlans to load this node data.</p>';
     explorerInterfaceRows = [];
+    explorerVlanRows = [];
   };
 
   detailFlyoutMaximize.addEventListener('click', () => maximizeFlyout(detailFlyout));
@@ -584,9 +640,7 @@ async function initAnalyzePage() {
     let currentPage = 1;
     const draw = () => {
       let pg;
-      if (resultMode === 'interfaces') {
-        pg = renderInterfacesTable(results, rows, currentPage);
-      } else if (resultMode === 'explorer') {
+      if (resultMode === 'explorer') {
         pg = renderExplorerTable(results, rows, currentPage);
       } else {
         pg = renderAnalyzeTable(results, rows, currentPage);
@@ -673,31 +727,114 @@ async function initAnalyzePage() {
         }
 
         explorerInterfaceRows = json.data.rows || [];
-        const panel = detailFlyoutBody.querySelector('#explorerInterfacesPanel');
-        if (panel) {
-          panel.innerHTML = renderExplorerInterfacesTable(explorerInterfaceRows);
+        fileViewerFlyout.classList.remove('hidden');
+        const fileViewerTitle = document.getElementById('fileViewerFlyoutTitle');
+        if (fileViewerTitle) {
+          fileViewerTitle.textContent = `Interfaces: ${nodeHostname}`;
         }
+        fileViewerFlyoutBody.innerHTML = renderExplorerInterfacesTable(explorerInterfaceRows);
       } catch (err) {
-        const panel = detailFlyoutBody.querySelector('#explorerInterfacesPanel');
-        if (panel) {
-          panel.innerHTML = `<p>${escapeHtml(err.message)}</p>`;
+        fileViewerFlyout.classList.remove('hidden');
+        fileViewerFlyoutBody.innerHTML = `<p>${escapeHtml(err.message)}</p>`;
+      }
+      return;
+    }
+
+    const aclSearchBtnEl = event.target.closest('.explorer-acl-search-btn');
+    if (aclSearchBtnEl) {
+      try {
+        const nodeHostname = aclSearchBtnEl.getAttribute('data-node-hostname') || '';
+        const filterName = aclSearchBtnEl.getAttribute('data-filter-name') || '';
+        const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
+        const res = await fetch('/api/node-acl-search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...folderInfo,
+            node_hostname: nodeHostname,
+            filter_name: filterName,
+          }),
+        });
+        const json = await res.json();
+        if (json.status !== 'success') {
+          throw new Error(json.error?.message || 'ACL search failed');
         }
+
+        fileViewerFlyout.classList.remove('hidden');
+        const fileViewerTitle = document.getElementById('fileViewerFlyoutTitle');
+        if (fileViewerTitle) {
+          fileViewerTitle.textContent = `ACL Search: ${filterName}`;
+        }
+        fileViewerFlyoutBody.innerHTML = renderAclSearchResultsTable(json.data.rows || []);
+      } catch (err) {
+        fileViewerFlyout.classList.remove('hidden');
+        fileViewerFlyoutBody.innerHTML = `<p>${escapeHtml(err.message)}</p>`;
+      }
+      return;
+    }
+
+    const vlansBtnEl = event.target.closest('.explorer-flyout-vlans-btn');
+    if (vlansBtnEl) {
+      try {
+        const nodeHostname = vlansBtnEl.getAttribute('data-node-hostname') || '';
+        const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
+        const res = await fetch('/api/vlans', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...folderInfo,
+            node_hostname: nodeHostname,
+          }),
+        });
+        const json = await res.json();
+        if (json.status !== 'success') {
+          throw new Error(json.error?.message || 'VLAN query failed');
+        }
+
+        explorerVlanRows = json.data.rows || [];
+        fileViewerFlyout.classList.remove('hidden');
+        const fileViewerTitle = document.getElementById('fileViewerFlyoutTitle');
+        if (fileViewerTitle) {
+          fileViewerTitle.textContent = `VLANs: ${nodeHostname}`;
+        }
+        fileViewerFlyoutBody.innerHTML = renderExplorerVlansTable(explorerVlanRows);
+      } catch (err) {
+        fileViewerFlyout.classList.remove('hidden');
+        fileViewerFlyoutBody.innerHTML = `<p>${escapeHtml(err.message)}</p>`;
       }
       return;
     }
 
     const interfaceDetailBtnEl = event.target.closest('.explorer-interface-detail-btn');
-    if (!interfaceDetailBtnEl) {
+    if (interfaceDetailBtnEl) {
+      const index = Number(interfaceDetailBtnEl.getAttribute('data-explorer-interface-index'));
+      const row = explorerInterfaceRows[index];
+      if (!row) {
+        return;
+      }
+
+      openDetailFlyout('Interface Properties', row);
+      const table = renderDetailTable('Interface Properties', row);
+      fileViewerFlyout.classList.remove('hidden');
+      fileViewerFlyoutBody.innerHTML = `${renderExplorerInterfacesTable(explorerInterfaceRows)}${table}`;
       return;
     }
 
-    const index = Number(interfaceDetailBtnEl.getAttribute('data-explorer-interface-index'));
-    const row = explorerInterfaceRows[index];
+    const vlanDetailBtnEl = event.target.closest('.explorer-vlan-detail-btn');
+    if (!vlanDetailBtnEl) {
+      return;
+    }
+
+    const index = Number(vlanDetailBtnEl.getAttribute('data-explorer-vlan-index'));
+    const row = explorerVlanRows[index];
     if (!row) {
       return;
     }
 
-    openDetailFlyout('Interface Properties', row);
+    openDetailFlyout('VLAN Properties', row);
+    const table = renderDetailTable('VLAN Properties', row);
+    fileViewerFlyout.classList.remove('hidden');
+    fileViewerFlyoutBody.innerHTML = `${renderExplorerVlansTable(explorerVlanRows)}${table}`;
   });
 
   applyClientMatchBtn.addEventListener('click', () => {
@@ -781,32 +918,6 @@ async function initAnalyzePage() {
     }
   });
 
-  interfacesBtn.addEventListener('click', async () => {
-    try {
-      const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
-      const res = await fetch('/api/interfaces', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(folderInfo),
-      });
-      const json = await res.json();
-      if (json.status !== 'success') {
-        throw new Error(json.error?.message || 'Interfaces query failed');
-      }
-
-      snapshotName = json.data.snapshot_name;
-      resultMode = 'interfaces';
-      allRows = json.data.rows || [];
-      filteredRows = [...allRows];
-      closeDetailFlyout();
-      closeFileViewerFlyout();
-      updateMeta(filteredRows.length, allRows.length);
-      renderRows(filteredRows);
-    } catch (err) {
-      showMessage(meta, `<p>${escapeHtml(err.message)}</p>`);
-    }
-  });
-
   explorerBtn.addEventListener('click', async () => {
     try {
       const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
@@ -824,8 +935,15 @@ async function initAnalyzePage() {
       resultMode = 'explorer';
       allRows = json.data.rows || [];
       filteredRows = [...allRows];
-      closeDetailFlyout();
-      closeFileViewerFlyout();
+      detailFlyoutTitle.textContent = 'Node Property Selection';
+      detailFlyoutBody.innerHTML = '<p>Select a node to view properties and actions.</p>';
+      detailFlyout.classList.remove('hidden');
+      const fileViewerTitle = document.getElementById('fileViewerFlyoutTitle');
+      if (fileViewerTitle) {
+        fileViewerTitle.textContent = 'Interfaces';
+      }
+      fileViewerFlyoutBody.innerHTML = '<p>Interfaces or VLANs for the selected node will appear here.</p>';
+      fileViewerFlyout.classList.remove('hidden');
       updateMeta(filteredRows.length, allRows.length);
       renderRows(filteredRows);
     } catch (err) {

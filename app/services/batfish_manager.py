@@ -93,6 +93,10 @@ class BatfishManager:
     def init_snapshot(self, zip_data: bytes, config_folder: str) -> str:
         bf = self._session()
         snapshot_name = config_folder
+        print(
+            f"[BATFISH DEBUG] init_snapshot host={self.server} snapshot={snapshot_name} zip_bytes={len(zip_data)} overwrite=True",
+            flush=True,
+        )
         logger.debug(
             "Sending Batfish init_snapshot request host=%s snapshot=%s zip_bytes=%d overwrite=%s",
             self.server,
@@ -105,6 +109,10 @@ class BatfishManager:
 
     def run_filter_line_reachability(self) -> List[Dict[str, object]]:
         bf = self._session()
+        print(
+            f"[BATFISH DEBUG] query=filterLineReachability host={self.server}",
+            flush=True,
+        )
         query = bf.q.filterLineReachability()
         logger.debug("Sending Batfish query host=%s query=%s", self.server, "filterLineReachability")
         frame = query.answer().frame()
@@ -112,6 +120,10 @@ class BatfishManager:
 
     def run_search_filters(self, header_constraints: object) -> List[Dict[str, object]]:
         bf = self._session()
+        print(
+            f"[BATFISH DEBUG] query=searchFilters host={self.server} headers={header_constraints!r}",
+            flush=True,
+        )
         query = bf.q.searchFilters(headers=header_constraints)
         logger.debug(
             "Sending Batfish query host=%s query=%s headers=%r",
@@ -122,8 +134,29 @@ class BatfishManager:
         frame = query.answer().frame()
         return _frame_to_records(frame)
 
+    def run_search_filters_for_acl(self, node_hostname: str, filter_name: str) -> List[Dict[str, object]]:
+        bf = self._session()
+        print(
+            f"[BATFISH DEBUG] query=searchFilters host={self.server} nodes={node_hostname!r} filters={filter_name!r}",
+            flush=True,
+        )
+        query = bf.q.searchFilters(nodes=node_hostname, filters=filter_name)
+        logger.debug(
+            "Sending Batfish query host=%s query=%s node=%s filter=%s",
+            self.server,
+            "searchFilters",
+            node_hostname,
+            filter_name,
+        )
+        frame = query.answer().frame()
+        return _frame_to_records(frame)
+
     def run_interface_properties(self, node_hostname: Optional[str] = None) -> List[Dict[str, object]]:
         bf = self._session()
+        print(
+            f"[BATFISH DEBUG] query=interfaceProperties host={self.server} nodes={node_hostname if node_hostname else '*'}",
+            flush=True,
+        )
         query = (
             bf.q.interfaceProperties(nodes=node_hostname)
             if node_hostname
@@ -140,8 +173,32 @@ class BatfishManager:
 
     def run_node_properties(self) -> List[Dict[str, object]]:
         bf = self._session()
+        print(
+            f"[BATFISH DEBUG] query=nodeProperties host={self.server}",
+            flush=True,
+        )
         query = bf.q.nodeProperties()
         logger.debug("Sending Batfish query host=%s query=%s", self.server, "nodeProperties")
+        frame = query.answer().frame()
+        return _frame_to_records(frame)
+
+    def run_switched_vlan_properties(self, node_hostname: Optional[str] = None) -> List[Dict[str, object]]:
+        bf = self._session()
+        print(
+            f"[BATFISH DEBUG] query=switchedVlanProperties host={self.server} nodes={node_hostname if node_hostname else '*'}",
+            flush=True,
+        )
+        query = (
+            bf.q.switchedVlanProperties(nodes=node_hostname)
+            if node_hostname
+            else bf.q.switchedVlanProperties()
+        )
+        logger.debug(
+            "Sending Batfish query host=%s query=%s node=%s",
+            self.server,
+            "switchedVlanProperties",
+            node_hostname or "*",
+        )
         frame = query.answer().frame()
         return _frame_to_records(frame)
 

@@ -120,6 +120,10 @@ body {
   max-width: 1200px;
 }
 
+#analyzePage {
+  max-width: none;
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -243,7 +247,7 @@ button:hover {
 
 .analyze-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 720px;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.95fr) minmax(360px, 0.95fr);
   gap: 14px;
   align-items: start;
 }

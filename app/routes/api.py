@@ -215,6 +215,57 @@ def explorer():
         return fail(str(exc), "EXPLORER_ERROR", status=500)
 
 
+@api_bp.post("/vlans")
+def vlans():
+    try:
+        payload = request.get_json(force=True)
+        config_folder = _resolve_config_folder(payload)
+        node_hostname = str(payload.get("node_hostname", "")).strip()
+
+        s3 = _s3_manager()
+        bf = _batfish_manager()
+        snapshot_name = bf.init_snapshot(s3.get_snapshot_zip_data(config_folder), config_folder)
+        rows = bf.run_switched_vlan_properties(node_hostname=node_hostname or None)
+
+        return ok({"snapshot_name": snapshot_name, "rows": rows})
+    except ValidationError as exc:
+        return fail(str(exc), "VALIDATION_ERROR", status=400)
+    except Exception as exc:
+        return fail(str(exc), "VLANS_ERROR", status=500)
+
+
+@api_bp.post("/node-acl-search")
+def node_acl_search():
+    try:
+        payload = request.get_json(force=True)
+        config_folder = _resolve_config_folder(payload)
+        node_hostname = str(payload.get("node_hostname", "")).strip()
+        filter_name = str(payload.get("filter_name", "")).strip()
+
+        if not node_hostname:
+            raise ValidationError("node_hostname is required")
+        if not filter_name:
+            raise ValidationError("filter_name is required")
+
+        s3 = _s3_manager()
+        bf = _batfish_manager()
+        snapshot_name = bf.init_snapshot(s3.get_snapshot_zip_data(config_folder), config_folder)
+        rows = bf.run_search_filters_for_acl(node_hostname=node_hostname, filter_name=filter_name)
+
+        return ok(
+            {
+                "snapshot_name": snapshot_name,
+                "node_hostname": node_hostname,
+                "filter_name": filter_name,
+                "rows": rows,
+            }
+        )
+    except ValidationError as exc:
+        return fail(str(exc), "VALIDATION_ERROR", status=400)
+    except Exception as exc:
+        return fail(str(exc), "NODE_ACL_SEARCH_ERROR", status=500)
+
+
 @api_bp.post("/find-object")
 def find_object():
     try:
