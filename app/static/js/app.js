@@ -225,6 +225,75 @@ function renderExplorerTable(target, rows, page = 1) {
   return { pages: Math.ceil(rows.length / PAGE_SIZE), page };
 }
 
+function summarizeNameList(values) {
+  if (!Array.isArray(values) || values.length === 0) {
+    return '';
+  }
+  return values.map((value) => escapeHtml(String(value))).join(', ');
+}
+
+function renderSnmpCheckTable(target, report, page = 1) {
+  target.classList.remove('hidden');
+  const masterValues = Array.isArray(report?.master_values) ? report.master_values : [];
+  const mismatchRows = Array.isArray(report?.mismatch_rows) ? report.mismatch_rows : [];
+
+  const masterBody = masterValues.length
+    ? masterValues
+      .map((entry) => {
+        const name = escapeHtml(String(entry?.name || ''));
+        const definition = escapeHtml(JSON.stringify(entry?.definition ?? '', null, 0));
+        return `<tr><td>${name}</td><td>${definition}</td></tr>`;
+      })
+      .join('')
+    : '<tr><td colspan="2">No Community_Match_Expr values found.</td></tr>';
+
+  const start = (page - 1) * PAGE_SIZE;
+  const paged = mismatchRows.slice(start, start + PAGE_SIZE);
+
+  const mismatchBody = paged.length
+    ? paged
+      .map((row, idx) => {
+        const rowIndex = start + idx;
+        const missing = Array.isArray(row?.missing) ? row.missing : [];
+        const extra = Array.isArray(row?.extra) ? row.extra : [];
+        const different = Array.isArray(row?.different) ? row.different : [];
+        const summary = [
+          `missing: ${missing.length}`,
+          `extra: ${extra.length}`,
+          `different: ${different.length}`,
+        ].join(' | ');
+
+        return `<tr>
+          <td>${escapeHtml(String(row?.node || ''))}</td>
+          <td>${escapeHtml(summary)}</td>
+          <td>${summarizeNameList(missing)}</td>
+          <td>${summarizeNameList(extra)}</td>
+          <td><button type="button" class="snmp-detail-btn" data-snmp-row-index="${rowIndex}">show mismatch</button></td>
+        </tr>`;
+      })
+      .join('')
+    : '<tr><td colspan="5">No mismatches found.</td></tr>';
+
+  target.innerHTML = `
+    <h4>All Community_Match_Expr Values (${masterValues.length})</h4>
+    <div class="table-wrap">
+      <table>
+        <tr><th>Name</th><th>Definition</th></tr>
+        ${masterBody}
+      </table>
+    </div>
+    <h4 style="margin-top:1rem;">Nodes With Mismatches (${mismatchRows.length})</h4>
+    <div class="table-wrap">
+      <table>
+        <tr><th>Node</th><th>Summary</th><th>Missing</th><th>Extra</th><th>Details</th></tr>
+        ${mismatchBody}
+      </table>
+    </div>
+  `;
+
+  return { pages: Math.ceil(mismatchRows.length / PAGE_SIZE), page };
+}
+
 function renderFindObjectTable(target, rows, page = 1) {
   target.classList.remove('hidden');
   if (!rows.length) {
@@ -557,6 +626,7 @@ async function initAnalyzePage() {
 
   const newField = document.getElementById('analyzeNewFolderName');
   const analyzeBtn = document.getElementById('analyzeBtn');
+  const snmpCheckBtn = document.getElementById('snmpCheckBtn');
   const searchBtn = document.getElementById('searchBtn');
   const explorerBtn = document.getElementById('explorerBtn');
   const findObjectBtn = document.getElementById('findObjectBtn');
@@ -589,6 +659,7 @@ async function initAnalyzePage() {
   let findObjectRows = [];
   let explorerInterfaceRows = [];
   let explorerVlanRows = [];
+  let snmpReport = null;
   let snapshotName = '';
   let resultMode = 'analyze';
 
@@ -676,6 +747,8 @@ async function initAnalyzePage() {
       let pg;
       if (resultMode === 'explorer') {
         pg = renderExplorerTable(results, rows, currentPage);
+      } else if (resultMode === 'snmp') {
+        pg = renderSnmpCheckTable(results, snmpReport || {}, currentPage);
       } else {
         pg = renderAnalyzeTable(results, rows, currentPage);
       }
@@ -728,17 +801,29 @@ async function initAnalyzePage() {
     }
 
     const explorerBtnEl = event.target.closest('.explorer-detail-btn');
-    if (!explorerBtnEl) {
+    if (explorerBtnEl) {
+      const rowIndex = Number(explorerBtnEl.getAttribute('data-explorer-row-index'));
+      const row = filteredRows[rowIndex];
+      if (!row) {
+        return;
+      }
+
+      openExplorerNodeFlyout(row);
       return;
     }
 
-    const rowIndex = Number(explorerBtnEl.getAttribute('data-explorer-row-index'));
+    const snmpDetailBtn = event.target.closest('.snmp-detail-btn');
+    if (!snmpDetailBtn) {
+      return;
+    }
+
+    const rowIndex = Number(snmpDetailBtn.getAttribute('data-snmp-row-index'));
     const row = filteredRows[rowIndex];
     if (!row) {
       return;
     }
 
-    openExplorerNodeFlyout(row);
+    openDetailFlyout('SNMP Community Mismatch', row);
   });
 
   detailFlyoutBody.addEventListener('click', async (event) => {
@@ -943,11 +1028,47 @@ async function initAnalyzePage() {
 
       snapshotName = json.data.snapshot_name;
       resultMode = 'analyze';
+      snmpReport = null;
       allRows = json.data.rows || [];
       filteredRows = [...allRows];
       closeDetailFlyout();
       closeFileViewerFlyout();
       updateMeta(filteredRows.length, allRows.length);
+      renderRows(filteredRows);
+    } catch (err) {
+      showMessage(meta, `<p>${escapeHtml(err.message)}</p>`);
+    }
+  });
+
+  snmpCheckBtn.addEventListener('click', async () => {
+    try {
+      const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
+      const res = await fetch('/api/snmp-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(folderInfo),
+      });
+      const json = await res.json();
+      if (json.status !== 'success') {
+        throw new Error(json.error?.message || 'SNMP check failed');
+      }
+
+      snapshotName = json.data.snapshot_name;
+      resultMode = 'snmp';
+      snmpReport = json.data;
+      allRows = json.data.mismatch_rows || [];
+      filteredRows = [...allRows];
+      closeDetailFlyout();
+      closeFileViewerFlyout();
+
+      const baseline = json.data.baseline_signature_meta || {};
+      showMessage(
+        meta,
+        `<p>Snapshot: ${escapeHtml(snapshotName || '-')}</p>
+         <p>Nodes checked: ${escapeHtml(String(baseline.node_count || 0))}</p>
+         <p>Majority baseline: ${escapeHtml(String(baseline.majority_count || 0))} nodes</p>
+         <p>Mismatched nodes: ${escapeHtml(String(filteredRows.length))}</p>`
+      );
       renderRows(filteredRows);
     } catch (err) {
       showMessage(meta, `<p>${escapeHtml(err.message)}</p>`);
@@ -969,6 +1090,7 @@ async function initAnalyzePage() {
 
       snapshotName = json.data.snapshot_name;
       resultMode = 'explorer';
+      snmpReport = null;
       allRows = json.data.rows || [];
       filteredRows = [...allRows];
       detailFlyoutTitle.textContent = 'Node Property Selection';
@@ -1084,6 +1206,7 @@ async function initAnalyzePage() {
 
       snapshotName = json.data.snapshot_name;
       resultMode = 'analyze';
+      snmpReport = null;
       allRows = json.data.rows || [];
       filteredRows = [...allRows];
       closeDetailFlyout();

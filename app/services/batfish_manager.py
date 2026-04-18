@@ -171,14 +171,61 @@ class BatfishManager:
         frame = query.answer().frame()
         return _frame_to_records(frame)
 
-    def run_node_properties(self) -> List[Dict[str, object]]:
+    def run_node_properties(
+        self,
+        nodes: Optional[object] = None,
+        properties: Optional[object] = None,
+    ) -> List[Dict[str, object]]:
         bf = self._session()
         print(
-            f"[BATFISH DEBUG] query=nodeProperties host={self.server}",
+            f"[BATFISH DEBUG] query=nodeProperties host={self.server} nodes={nodes if nodes else '*'} properties={properties if properties else '*'}",
             flush=True,
         )
-        query = bf.q.nodeProperties()
-        logger.debug("Sending Batfish query host=%s query=%s", self.server, "nodeProperties")
+        kwargs: Dict[str, object] = {}
+        if nodes is not None:
+            kwargs["nodes"] = nodes
+        if properties is not None:
+            kwargs["properties"] = properties
+
+        query = bf.q.nodeProperties(**kwargs)
+        logger.debug(
+            "Sending Batfish query host=%s query=%s nodes=%r properties=%r",
+            self.server,
+            "nodeProperties",
+            nodes,
+            properties,
+        )
+        frame = query.answer().frame()
+        return _frame_to_records(frame)
+
+    def run_named_structures(
+        self,
+        nodes: Optional[object] = None,
+        structure_types: Optional[object] = None,
+        structure_names: Optional[object] = None,
+    ) -> List[Dict[str, object]]:
+        bf = self._session()
+        print(
+            f"[BATFISH DEBUG] query=namedStructures host={self.server} nodes={nodes if nodes else '*'} structure_types={structure_types if structure_types else '*'}",
+            flush=True,
+        )
+        kwargs: Dict[str, object] = {}
+        if nodes is not None:
+            kwargs["nodes"] = nodes
+        if structure_types is not None:
+            kwargs["structureTypes"] = structure_types
+        if structure_names is not None:
+            kwargs["structureNames"] = structure_names
+
+        query = bf.q.namedStructures(**kwargs)
+        logger.debug(
+            "Sending Batfish query host=%s query=%s nodes=%r structure_types=%r structure_names=%r",
+            self.server,
+            "namedStructures",
+            nodes,
+            structure_types,
+            structure_names,
+        )
         frame = query.answer().frame()
         return _frame_to_records(frame)
 

@@ -1,4 +1,6 @@
 from flask import Blueprint, current_app, request
+import json
+from collections import Counter
 
 from app.services.batfish_manager import BatfishManager, build_header_constraints
 from app.services.ip_finder import find_object_matches, find_string_matches, normalize_max_results
@@ -80,6 +82,150 @@ def _normalize_acl_filter_name(raw_value: object) -> str:
         return f"/^{filter_name}/"
 
     return filter_name
+
+
+def _normalize_node_name(value: object) -> str:
+    if isinstance(value, dict):
+        for key in ("hostname", "name", "node"):
+            nested = value.get(key)
+            if nested:
+                return str(nested).strip()
+        return ""
+    return str(value or "").strip()
+
+
+def _extract_row_node_name(row: dict) -> str:
+    for key in ("Node", "Hostname", "Name"):
+        if key in row:
+            parsed = _normalize_node_name(row.get(key))
+            if parsed:
+                return parsed
+    return ""
+
+
+def _canonicalize_for_compare(value: object) -> object:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+
+    if isinstance(value, list):
+        canonical_items = [_canonicalize_for_compare(item) for item in value]
+        return sorted(canonical_items, key=lambda item: json.dumps(item, sort_keys=True, default=str))
+
+    if isinstance(value, dict):
+        return {
+            str(key): _canonicalize_for_compare(item)
+            for key, item in sorted(value.items(), key=lambda entry: str(entry[0]))
+        }
+
+    return str(value)
+
+
+def _build_snmp_community_report(node_rows: list[dict], structure_rows: list[dict]) -> dict:
+    all_nodes = sorted({node for node in (_extract_row_node_name(row) for row in node_rows) if node})
+    per_node_values: dict[str, dict[str, object]] = {node: {} for node in all_nodes}
+
+    for row in structure_rows:
+        node_name = _extract_row_node_name(row)
+        if not node_name:
+            continue
+
+        structure_name = str(row.get("Structure_Name") or row.get("StructureName") or "").strip()
+        if not structure_name:
+            continue
+
+        struct_type = str(row.get("Structure_Type") or row.get("StructureType") or "").strip()
+        if "community_match_expr" not in struct_type.casefold():
+            continue
+
+        definition = row.get("Structure_Definition", row.get("StructureDefinition"))
+        canonical_definition = _canonicalize_for_compare(definition)
+        per_node_values.setdefault(node_name, {})[structure_name] = canonical_definition
+
+    signatures: dict[str, str] = {}
+    signature_counts = Counter()
+    for node_name, definitions in per_node_values.items():
+        signature_payload = sorted(
+            (
+                {
+                    "name": name,
+                    "definition": definition,
+                }
+                for name, definition in definitions.items()
+            ),
+            key=lambda item: item["name"],
+        )
+        signature = json.dumps(signature_payload, sort_keys=True, separators=(",", ":"), default=str)
+        signatures[node_name] = signature
+        signature_counts[signature] += 1
+
+    baseline_signature = "[]"
+    baseline_count = 0
+    if signature_counts:
+        baseline_count = max(signature_counts.values())
+        candidate_signatures = sorted(
+            signature
+            for signature, count in signature_counts.items()
+            if count == baseline_count
+        )
+        baseline_signature = candidate_signatures[0]
+
+    baseline_entries = json.loads(baseline_signature)
+    baseline_map = {str(item.get("name", "")): item.get("definition") for item in baseline_entries}
+
+    master_map: dict[str, object] = {}
+    for node_map in per_node_values.values():
+        for name, definition in node_map.items():
+            master_map.setdefault(name, definition)
+
+    master_values = [
+        {
+            "name": name,
+            "definition": definition,
+        }
+        for name, definition in sorted(master_map.items(), key=lambda item: item[0])
+    ]
+
+    mismatch_rows: list[dict] = []
+    for node_name in sorted(per_node_values):
+        current_map = per_node_values[node_name]
+        missing = sorted(name for name in baseline_map if name not in current_map)
+        extra = sorted(name for name in current_map if name not in baseline_map)
+
+        different = []
+        for name in sorted(name for name in current_map if name in baseline_map):
+            if current_map[name] != baseline_map[name]:
+                different.append(
+                    {
+                        "name": name,
+                        "expected_definition": baseline_map[name],
+                        "actual_definition": current_map[name],
+                    }
+                )
+
+        if not missing and not extra and not different:
+            continue
+
+        mismatch_rows.append(
+            {
+                "node": node_name,
+                "missing": missing,
+                "extra": extra,
+                "different": different,
+                "baseline_entry_count": len(baseline_map),
+                "node_entry_count": len(current_map),
+            }
+        )
+
+    return {
+        "master_values": master_values,
+        "mismatch_rows": mismatch_rows,
+        "rows": mismatch_rows,
+        "baseline_signature_meta": {
+            "node_count": len(per_node_values),
+            "majority_count": baseline_count,
+            "baseline_entry_count": len(baseline_map),
+        },
+    }
 
 
 def _parse_find_object_payload(payload: dict) -> tuple[str, str, int, str]:
@@ -247,6 +393,32 @@ def explorer():
         return fail(str(exc), "VALIDATION_ERROR", status=400)
     except Exception as exc:
         return fail(str(exc), "EXPLORER_ERROR", status=500)
+
+
+@api_bp.post("/snmp-check")
+def snmp_check():
+    try:
+        payload = request.get_json(force=True)
+        config_folder = _resolve_config_folder(payload)
+
+        s3 = _s3_manager()
+        bf = _batfish_manager()
+        snapshot_name = bf.init_snapshot(s3.get_snapshot_zip_data(config_folder), config_folder)
+
+        node_rows = bf.run_node_properties()
+        structure_rows = bf.run_named_structures()
+        report = _build_snmp_community_report(node_rows=node_rows, structure_rows=structure_rows)
+
+        return ok(
+            {
+                "snapshot_name": snapshot_name,
+                **report,
+            }
+        )
+    except ValidationError as exc:
+        return fail(str(exc), "VALIDATION_ERROR", status=400)
+    except Exception as exc:
+        return fail(str(exc), "SNMP_CHECK_ERROR", status=500)
 
 
 @api_bp.post("/vlans")
