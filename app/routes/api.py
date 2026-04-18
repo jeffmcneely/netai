@@ -4,10 +4,13 @@ from collections import Counter
 
 from app.services.batfish_manager import BatfishManager, build_header_constraints
 from app.services.ip_finder import find_object_matches, find_string_matches, normalize_max_results
+from app.services.openai_manager import OpenAIManager
 from app.services.s3_manager import S3Manager
 from app.utils.responses import fail, ok
 from app.utils.validators import (
     ValidationError,
+    parse_acl_optimize_payload,
+    parse_acl_verify_payload,
     parse_csv,
     parse_int_values,
     parse_ip_values,
@@ -31,6 +34,13 @@ def _s3_manager() -> S3Manager:
 
 def _batfish_manager() -> BatfishManager:
     return BatfishManager(server=current_app.config.get("BATFISH_SERVER", ""))
+
+
+def _openai_manager() -> OpenAIManager:
+    return OpenAIManager(
+        api_key=current_app.config.get("OPENAI_API_KEY", ""),
+        model=current_app.config.get("OPENAI_MODEL", "gpt-5.2"),
+    )
 
 
 def _is_truthy(value) -> bool:
@@ -297,6 +307,61 @@ def list_configs():
         return fail(str(exc), "S3_LIST_ERROR", status=500)
 
 
+@api_bp.post("/acl/optimize")
+def acl_optimize():
+    try:
+        payload = request.get_json(force=True)
+        platform, current_acl = parse_acl_optimize_payload(payload)
+
+        optimized_acl = _openai_manager().optimize_acl(current_acl)
+        return ok(
+            {
+                "platform": platform,
+                "candidate": optimized_acl,
+            }
+        )
+    except ValidationError as exc:
+        return fail(str(exc), "VALIDATION_ERROR", status=400)
+    except Exception as exc:
+        return fail(str(exc), "ACL_OPTIMIZE_ERROR", status=500)
+
+
+@api_bp.post("/acl/verify")
+def acl_verify():
+    try:
+        payload = request.get_json(force=True)
+        platform, original_acl, compressed_acl = parse_acl_verify_payload(payload)
+
+        bf = _batfish_manager()
+        original_snapshot = bf.init_snapshot_from_text(
+            original_acl,
+            platform=platform,
+            snapshot_name="original",
+        )
+        compressed_snapshot = bf.init_snapshot_from_text(
+            compressed_acl,
+            platform=platform,
+            snapshot_name="compressed",
+        )
+        rows = bf.run_compare_filters(
+            snapshot_name=compressed_snapshot,
+            reference_snapshot=original_snapshot,
+        )
+
+        return ok(
+            {
+                "platform": platform,
+                "original_snapshot": original_snapshot,
+                "compressed_snapshot": compressed_snapshot,
+                "rows": rows,
+            }
+        )
+    except ValidationError as exc:
+        return fail(str(exc), "VALIDATION_ERROR", status=400)
+    except Exception as exc:
+        return fail(str(exc), "ACL_VERIFY_ERROR", status=500)
+
+
 @api_bp.post("/upload")
 def upload_files():
     try:
@@ -335,6 +400,24 @@ def analyze():
         return fail(str(exc), "VALIDATION_ERROR", status=400)
     except Exception as exc:
         return fail(str(exc), "ANALYZE_ERROR", status=500)
+
+
+@api_bp.post("/unreachable-rules")
+def unreachable_rules():
+    try:
+        payload = request.get_json(force=True)
+        config_folder = _resolve_config_folder(payload)
+
+        s3 = _s3_manager()
+        bf = _batfish_manager()
+        snapshot_name = bf.init_snapshot(s3.get_snapshot_zip_data(config_folder), config_folder)
+        rows = bf.run_filter_line_reachability()
+
+        return ok({"snapshot_name": snapshot_name, "rows": rows})
+    except ValidationError as exc:
+        return fail(str(exc), "VALIDATION_ERROR", status=400)
+    except Exception as exc:
+        return fail(str(exc), "UNREACHABLE_RULES_ERROR", status=500)
 
 
 @api_bp.post("/search")

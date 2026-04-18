@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<section id="aclOptimizePage" class="page">
+  <h2 id="aclOptimizeHeading">ACL Optimize</h2>
+
+  <div class="card acl-optimize-controls">
+    <label id="aclPlatformLabel" for="aclPlatform">platform</label>
+    <select id="aclPlatform" name="platform">
+      <option value="arista">arista</option>
+      <option value="bigip">bigip</option>
+      <option value="cisco-nx">cisco-nx</option>
+      <option value="cisco-xr">cisco-xr</option>
+      <option value="force10">force10</option>
+      <option value="foundry">foundry</option>
+      <option value="juniper">juniper</option>
+      <option value="mrv">mrv</option>
+      <option value="paloalto">paloalto</option>
+    </select>
+  </div>
+
+  <div class="acl-optimize-grid">
+    <div class="card">
+      <label id="aclCurrentLabel" for="aclCurrent">current</label>
+      <textarea id="aclCurrent" class="acl-textarea" spellcheck="false"></textarea>
+    </div>
+    <div class="card">
+      <label id="aclCandidateLabel" for="aclCandidate">candidate</label>
+      <textarea id="aclCandidate" class="acl-textarea" spellcheck="false"></textarea>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="aclOptimizeBtn" type="button">optimize current</button>
+    <button id="aclVerifyBtn" type="button">verify</button>
+  </div>
+
+  <div id="aclOptimizeStatus" class="card hidden"></div>
+  <div id="aclDiffResults" class="card hidden"></div>
+  <div id="aclVerifyResults" class="card hidden"></div>
+</section>
+{% endblock %}

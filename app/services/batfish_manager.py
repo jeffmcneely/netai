@@ -107,6 +107,56 @@ class BatfishManager:
         bf.init_snapshot(BytesIO(zip_data), name=snapshot_name, overwrite=True)
         return snapshot_name
 
+    def init_snapshot_from_text(self, acl_text: str, platform: str, snapshot_name: str) -> str:
+        bf = self._session()
+        payload = str(acl_text or "")
+        if not payload.strip():
+            raise ValueError("acl text is required")
+
+        print(
+            f"[BATFISH DEBUG] init_snapshot_from_text host={self.server} snapshot={snapshot_name} platform={platform} overwrite=True",
+            flush=True,
+        )
+        logger.debug(
+            "Sending Batfish init_snapshot_from_text request host=%s snapshot=%s platform=%s overwrite=%s",
+            self.server,
+            snapshot_name,
+            platform,
+            True,
+        )
+        try:
+            bf.init_snapshot_from_text(
+                payload,
+                platform=platform,
+                snapshot_name=snapshot_name,
+                overwrite=True,
+            )
+        except TypeError:
+            bf.init_snapshot_from_text(
+                payload,
+                platform=platform,
+                name=snapshot_name,
+                overwrite=True,
+            )
+        return snapshot_name
+
+    def run_compare_filters(self, snapshot_name: str, reference_snapshot: str) -> List[Dict[str, object]]:
+        bf = self._session()
+        print(
+            f"[BATFISH DEBUG] query=compareFilters host={self.server} snapshot={snapshot_name} reference_snapshot={reference_snapshot}",
+            flush=True,
+        )
+        query = bf.q.compareFilters()
+        logger.debug(
+            "Sending Batfish query host=%s query=%s snapshot=%s reference_snapshot=%s",
+            self.server,
+            "compareFilters",
+            snapshot_name,
+            reference_snapshot,
+        )
+        frame = query.answer(snapshot=snapshot_name, reference_snapshot=reference_snapshot).frame()
+        return _frame_to_records(frame)
+
     def run_filter_line_reachability(self) -> List[Dict[str, object]]:
         bf = self._session()
         print(

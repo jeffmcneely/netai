@@ -318,6 +318,122 @@ function renderFindObjectTable(target, rows, page = 1) {
   return { pages: Math.ceil(rows.length / PAGE_SIZE), page };
 }
 
+function renderAclVerifyTable(target, rows) {
+  target.classList.remove('hidden');
+  if (!Array.isArray(rows) || rows.length === 0) {
+    target.innerHTML = '<p>No compareFilters rows returned.</p>';
+    return;
+  }
+
+  const columns = Object.keys(rows[0]);
+  const header = `<tr>${columns.map((col) => `<th>${escapeHtml(col)}</th>`).join('')}</tr>`;
+  const body = rows
+    .map((row) => `<tr>${columns.map((col) => `<td>${formatCell(row[col])}</td>`).join('')}</tr>`)
+    .join('');
+
+  target.innerHTML = `<h4>compareFilters</h4><div class="table-wrap"><table>${header}${body}</table></div>`;
+}
+
+function buildLineDiffOps(currentText, candidateText) {
+  const left = String(currentText || '').split(/\r?\n/);
+  const right = String(candidateText || '').split(/\r?\n/);
+  const n = left.length;
+  const m = right.length;
+
+  const dp = Array.from({ length: n + 1 }, () => Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i -= 1) {
+    for (let j = m - 1; j >= 0; j -= 1) {
+      if (left[i] === right[j]) {
+        dp[i][j] = dp[i + 1][j + 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+  }
+
+  const ops = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (left[i] === right[j]) {
+      ops.push({ type: 'same', left: left[i], right: right[j] });
+      i += 1;
+      j += 1;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      ops.push({ type: 'remove', left: left[i], right: '' });
+      i += 1;
+    } else {
+      ops.push({ type: 'add', left: '', right: right[j] });
+      j += 1;
+    }
+  }
+
+  while (i < n) {
+    ops.push({ type: 'remove', left: left[i], right: '' });
+    i += 1;
+  }
+
+  while (j < m) {
+    ops.push({ type: 'add', left: '', right: right[j] });
+    j += 1;
+  }
+
+  return ops;
+}
+
+function renderAclDiffTable(target, currentText, candidateText) {
+  const ops = buildLineDiffOps(currentText, candidateText);
+  const changed = ops.filter((op) => op.type !== 'same').length;
+  const removedCount = ops.filter((op) => op.type === 'remove').length;
+  const addedCount = ops.filter((op) => op.type === 'add').length;
+
+  target.classList.remove('hidden');
+
+  if (changed === 0) {
+    target.innerHTML = '<h4>Line By Line Diff</h4><p>verification complete</p>';
+    return;
+  }
+
+  const body = ops
+    .map((op) => {
+      const label = op.type === 'add' ? '+' : (op.type === 'remove' ? '-' : '=');
+      return `<tr class="acl-diff-row acl-diff-${op.type}">
+        <td class="acl-diff-mark">${escapeHtml(label)}</td>
+        <td>${escapeHtml(op.left || '')}</td>
+        <td>${escapeHtml(op.right || '')}</td>
+      </tr>`;
+    })
+    .join('');
+
+  target.innerHTML = `
+    <label class="acl-diff-toggle" for="aclDiffHideUnchanged">
+      <input id="aclDiffHideUnchanged" type="checkbox">
+      <span>hide unchanged lines</span>
+    </label>
+    <h4>Line By Line Diff</h4>
+    <p class="acl-diff-summary">changes: ${changed} | removed: ${removedCount} | added: ${addedCount}</p>
+    <div class="table-wrap">
+      <table>
+        <tr><th>Change</th><th>Current</th><th>Candidate</th></tr>
+        ${body}
+      </table>
+    </div>
+  `;
+
+  const hideUnchanged = target.querySelector('#aclDiffHideUnchanged');
+  const syncUnchangedVisibility = () => {
+    const shouldHide = Boolean(hideUnchanged?.checked);
+    target.querySelectorAll('.acl-diff-row.acl-diff-same').forEach((row) => {
+      row.classList.toggle('acl-diff-hidden', shouldHide);
+    });
+  };
+
+  if (hideUnchanged) {
+    hideUnchanged.addEventListener('change', syncUnchangedVisibility);
+  }
+  syncUnchangedVisibility();
+}
+
 function renderFileViewerHtml(payload) {
   const title = `${payload.filename || '-'} (${payload.total_lines || 0} lines)`;
   const rows = (payload.lines || []).map((line) => {
@@ -626,6 +742,7 @@ async function initAnalyzePage() {
 
   const newField = document.getElementById('analyzeNewFolderName');
   const analyzeBtn = document.getElementById('analyzeBtn');
+  const unreachableRulesBtn = document.getElementById('unreachableRulesBtn');
   const snmpCheckBtn = document.getElementById('snmpCheckBtn');
   const searchBtn = document.getElementById('searchBtn');
   const explorerBtn = document.getElementById('explorerBtn');
@@ -1040,6 +1157,33 @@ async function initAnalyzePage() {
     }
   });
 
+  unreachableRulesBtn.addEventListener('click', async () => {
+    try {
+      const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
+      const res = await fetch('/api/unreachable-rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(folderInfo),
+      });
+      const json = await res.json();
+      if (json.status !== 'success') {
+        throw new Error(json.error?.message || 'Unreachable rules query failed');
+      }
+
+      snapshotName = json.data.snapshot_name;
+      resultMode = 'analyze';
+      snmpReport = null;
+      allRows = json.data.rows || [];
+      filteredRows = [...allRows];
+      closeDetailFlyout();
+      closeFileViewerFlyout();
+      updateMeta(filteredRows.length, allRows.length);
+      renderRows(filteredRows);
+    } catch (err) {
+      showMessage(meta, `<p>${escapeHtml(err.message)}</p>`);
+    }
+  });
+
   snmpCheckBtn.addEventListener('click', async () => {
     try {
       const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
@@ -1219,11 +1363,89 @@ async function initAnalyzePage() {
   });
 }
 
+async function initAclOptimizePage() {
+  const page = document.getElementById('aclOptimizePage');
+  if (!page) {
+    return;
+  }
+
+  const platformInput = document.getElementById('aclPlatform');
+  const currentInput = document.getElementById('aclCurrent');
+  const candidateInput = document.getElementById('aclCandidate');
+  const optimizeBtn = document.getElementById('aclOptimizeBtn');
+  const verifyBtn = document.getElementById('aclVerifyBtn');
+  const status = document.getElementById('aclOptimizeStatus');
+  const diffResults = document.getElementById('aclDiffResults');
+  const verifyResults = document.getElementById('aclVerifyResults');
+
+  optimizeBtn.addEventListener('click', async () => {
+    try {
+      const platform = (platformInput.value || '').trim();
+      const current = (currentInput.value || '').trim();
+      if (!current) {
+        throw new Error('current is required');
+      }
+
+      const res = await fetch('/api/acl/optimize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform, current }),
+      });
+      const json = await res.json();
+      if (json.status !== 'success') {
+        throw new Error(json.error?.message || 'ACL optimize failed');
+      }
+
+      candidateInput.value = json.data?.candidate || '';
+      showMessage(status, '<p>Candidate ACL updated.</p>');
+    } catch (err) {
+      showMessage(status, `<p>${escapeHtml(err.message)}</p>`);
+    }
+  });
+
+  verifyBtn.addEventListener('click', async () => {
+    try {
+      const platform = (platformInput.value || '').trim();
+      const current = (currentInput.value || '').trim();
+      const candidate = (candidateInput.value || '').trim();
+      if (!current) {
+        throw new Error('current is required');
+      }
+      if (!candidate) {
+        throw new Error('candidate is required');
+      }
+
+      renderAclDiffTable(diffResults, current, candidate);
+
+      const res = await fetch('/api/acl/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform, current, candidate }),
+      });
+      const json = await res.json();
+      if (json.status !== 'success') {
+        throw new Error(json.error?.message || 'ACL verify failed');
+      }
+
+      const rows = json.data?.rows || [];
+      showMessage(
+        status,
+        `<p>Verified snapshots: ${escapeHtml(json.data?.compressed_snapshot || 'compressed')} vs ${escapeHtml(json.data?.original_snapshot || 'original')}</p>`
+      );
+      renderAclVerifyTable(verifyResults, rows);
+    } catch (err) {
+      showMessage(status, `<p>${escapeHtml(err.message)}</p>`);
+      showMessage(verifyResults, '<p>Verification failed.</p>');
+    }
+  });
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
   try {
     installGlobalAjaxSpinner();
     await initIndexPage();
     await initAnalyzePage();
+    await initAclOptimizePage();
   } catch (err) {
     console.error(err);
   }

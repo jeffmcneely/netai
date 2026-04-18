@@ -4,6 +4,17 @@ from typing import List
 
 
 FOLDER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+ACL_PLATFORMS = {
+    "arista",
+    "bigip",
+    "cisco-nx",
+    "cisco-xr",
+    "force10",
+    "foundry",
+    "juniper",
+    "mrv",
+    "paloalto",
+}
 
 
 class ValidationError(ValueError):
@@ -83,3 +94,41 @@ def sanitize_filename(filename: str) -> str:
     if len(clean) > 255:
         raise ValidationError("Filename is too long")
     return clean
+
+
+def validate_acl_platform(raw_value: object) -> str:
+    platform = str(raw_value or "").strip().lower()
+    if not platform:
+        raise ValidationError("platform is required")
+    if platform not in ACL_PLATFORMS:
+        allowed = ", ".join(sorted(ACL_PLATFORMS))
+        raise ValidationError(f"platform must be one of: {allowed}")
+    return platform
+
+
+def parse_acl_optimize_payload(payload: dict) -> tuple[str, str]:
+    if payload is None:
+        raise ValidationError("JSON payload is required")
+
+    platform = validate_acl_platform(payload.get("platform"))
+    current_acl = str(payload.get("current", "")).strip()
+    if not current_acl:
+        raise ValidationError("current is required")
+
+    return platform, current_acl
+
+
+def parse_acl_verify_payload(payload: dict) -> tuple[str, str, str]:
+    if payload is None:
+        raise ValidationError("JSON payload is required")
+
+    platform = validate_acl_platform(payload.get("platform"))
+    original_acl = str(payload.get("current", "")).strip()
+    candidate_acl = str(payload.get("candidate", "")).strip()
+
+    if not original_acl:
+        raise ValidationError("current is required")
+    if not candidate_acl:
+        raise ValidationError("candidate is required")
+
+    return platform, original_acl, candidate_acl

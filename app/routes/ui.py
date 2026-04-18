@@ -12,3 +12,8 @@ def index_page():
 @ui_bp.get("/analyze")
 def analyze_page():
     return render_template("analyze.html")
+
+
+@ui_bp.get("/acl-optimize")
+def acl_optimize_page():
+    return render_template("acl_optimize.html")

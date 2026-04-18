@@ -234,6 +234,16 @@ input[type="text"] {
   border-radius: 8px;
 }
 
+select {
+  margin-top: 8px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+}
+
 .drop-zone {
   margin-top: 14px;
   border: 2px dashed var(--primary);
@@ -520,6 +530,58 @@ th {
   overflow-wrap: anywhere;
 }
 
+.acl-optimize-controls {
+  max-width: 360px;
+}
+
+.acl-optimize-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+}
+
+.acl-textarea {
+  width: 100%;
+  min-height: 320px;
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  font-family: "Menlo", "Monaco", monospace;
+  font-size: 0.84rem;
+  resize: vertical;
+}
+
+.acl-diff-summary {
+  color: var(--muted);
+  margin: 0 0 10px 0;
+}
+
+.acl-diff-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px 0;
+}
+
+.acl-diff-mark {
+  width: 64px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.acl-diff-hidden {
+  display: none;
+}
+
+.acl-diff-row.acl-diff-add td {
+  background: #e7f7ec;
+}
+
+.acl-diff-row.acl-diff-remove td {
+  background: #fde9e9;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -546,5 +608,9 @@ th {
 
   .viewer-line {
     grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .acl-optimize-grid {
+    grid-template-columns: 1fr;
   }
 }
