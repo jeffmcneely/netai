@@ -434,6 +434,14 @@ function renderAclDiffTable(target, currentText, candidateText) {
   syncUnchangedVisibility();
 }
 
+function renderAclCommandsOutput(target, commandsText) {
+  target.classList.remove('hidden');
+  target.innerHTML = `
+    <h4>Generated Commands</h4>
+    <pre class="acl-command-output">${escapeHtml(String(commandsText || ''))}</pre>
+  `;
+}
+
 function renderFileViewerHtml(payload) {
   const title = `${payload.filename || '-'} (${payload.total_lines || 0} lines)`;
   const rows = (payload.lines || []).map((line) => {
@@ -1373,6 +1381,7 @@ async function initAclOptimizePage() {
   const currentInput = document.getElementById('aclCurrent');
   const candidateInput = document.getElementById('aclCandidate');
   const optimizeBtn = document.getElementById('aclOptimizeBtn');
+  const generateCommandsBtn = document.getElementById('aclGenerateCommandsBtn');
   const verifyBtn = document.getElementById('aclVerifyBtn');
   const status = document.getElementById('aclOptimizeStatus');
   const diffResults = document.getElementById('aclDiffResults');
@@ -1398,6 +1407,34 @@ async function initAclOptimizePage() {
 
       candidateInput.value = json.data?.candidate || '';
       showMessage(status, '<p>Candidate ACL updated.</p>');
+    } catch (err) {
+      showMessage(status, `<p>${escapeHtml(err.message)}</p>`);
+    }
+  });
+
+  generateCommandsBtn.addEventListener('click', async () => {
+    try {
+      const current = (currentInput.value || '').trim();
+      const candidate = (candidateInput.value || '').trim();
+      if (!current) {
+        throw new Error('current is required');
+      }
+      if (!candidate) {
+        throw new Error('candidate is required');
+      }
+
+      const res = await fetch('/api/acl/generate-commands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current, candidate }),
+      });
+      const json = await res.json();
+      if (json.status !== 'success') {
+        throw new Error(json.error?.message || 'Generate commands failed');
+      }
+
+      renderAclCommandsOutput(diffResults, json.data?.commands || '');
+      showMessage(status, '<p>Generated commands ready.</p>');
     } catch (err) {
       showMessage(status, `<p>${escapeHtml(err.message)}</p>`);
     }

@@ -9,6 +9,7 @@ from app.services.s3_manager import S3Manager
 from app.utils.responses import fail, ok
 from app.utils.validators import (
     ValidationError,
+    parse_acl_generate_commands_payload,
     parse_acl_optimize_payload,
     parse_acl_verify_payload,
     parse_csv,
@@ -360,6 +361,20 @@ def acl_verify():
         return fail(str(exc), "VALIDATION_ERROR", status=400)
     except Exception as exc:
         return fail(str(exc), "ACL_VERIFY_ERROR", status=500)
+
+
+@api_bp.post("/acl/generate-commands")
+def acl_generate_commands():
+    try:
+        payload = request.get_json(force=True)
+        current_acl, candidate_acl = parse_acl_generate_commands_payload(payload)
+
+        commands = _openai_manager().generate_acl_commands(current_acl=current_acl, candidate_acl=candidate_acl)
+        return ok({"commands": commands})
+    except ValidationError as exc:
+        return fail(str(exc), "VALIDATION_ERROR", status=400)
+    except Exception as exc:
+        return fail(str(exc), "ACL_GENERATE_COMMANDS_ERROR", status=500)
 
 
 @api_bp.post("/upload")

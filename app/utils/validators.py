@@ -132,3 +132,18 @@ def parse_acl_verify_payload(payload: dict) -> tuple[str, str, str]:
         raise ValidationError("candidate is required")
 
     return platform, original_acl, candidate_acl
+
+
+def parse_acl_generate_commands_payload(payload: dict) -> tuple[str, str]:
+    if payload is None:
+        raise ValidationError("JSON payload is required")
+
+    current_acl = str(payload.get("current", "")).strip()
+    candidate_acl = str(payload.get("candidate", "")).strip()
+
+    if not current_acl:
+        raise ValidationError("current is required")
+    if not candidate_acl:
+        raise ValidationError("candidate is required")
+
+    return current_acl, candidate_acl

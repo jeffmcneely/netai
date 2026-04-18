@@ -582,6 +582,18 @@ th {
   background: #fde9e9;
 }
 
+.acl-command-output {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7fafc;
+  font-family: "Menlo", "Monaco", monospace;
+  font-size: 0.84rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 1fr;
