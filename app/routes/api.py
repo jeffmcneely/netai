@@ -1,7 +1,7 @@
 from flask import Blueprint, current_app, request
 
 from app.services.batfish_manager import BatfishManager, build_header_constraints
-from app.services.ip_finder import find_object_matches, normalize_max_results
+from app.services.ip_finder import find_object_matches, find_string_matches, normalize_max_results
 from app.services.s3_manager import S3Manager
 from app.utils.responses import fail, ok
 from app.utils.validators import (
@@ -99,6 +99,23 @@ def _parse_find_object_payload(payload: dict) -> tuple[str, str, int]:
         raise ValidationError(str(exc)) from exc
 
     return config_folder, parsed_values[0], max_results
+
+
+def _parse_find_string_payload(payload: dict) -> tuple[str, str, int]:
+    if payload is None:
+        raise ValidationError("JSON payload is required")
+
+    config_folder = _resolve_config_folder(payload)
+    find_text = str(payload.get("find_text", "")).strip()
+    if not find_text:
+        raise ValidationError("find_text is required")
+
+    try:
+        max_results = normalize_max_results(payload.get("max_results"))
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+
+    return config_folder, find_text, max_results
 
 
 def _parse_find_object_file_query() -> tuple[str, str, int]:
@@ -305,6 +322,38 @@ def find_object():
         return fail(str(exc), "VALIDATION_ERROR", status=400)
     except Exception as exc:
         return fail(str(exc), "FIND_OBJECT_ERROR", status=500)
+
+
+@api_bp.post("/find-string")
+def find_string():
+    try:
+        payload = request.get_json(force=True)
+        config_folder, find_text, max_results = _parse_find_string_payload(payload)
+
+        s3 = _s3_manager()
+        files = s3.list_config_files(config_folder)
+        files_with_lines = ((filename, s3.iter_config_file_lines(config_folder, filename)) for filename in files)
+
+        normalized_input, matches, truncated = find_string_matches(
+            search_text=find_text,
+            files_with_lines=files_with_lines,
+            max_results=max_results,
+        )
+
+        return ok(
+            {
+                "config_folder": config_folder,
+                "input": normalized_input,
+                "total_matches": len(matches),
+                "truncated": truncated,
+                "max_results": max_results,
+                "results": matches,
+            }
+        )
+    except ValidationError as exc:
+        return fail(str(exc), "VALIDATION_ERROR", status=400)
+    except Exception as exc:
+        return fail(str(exc), "FIND_STRING_ERROR", status=500)
 
 
 @api_bp.get("/find-object/file")

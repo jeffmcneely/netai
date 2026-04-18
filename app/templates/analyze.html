@@ -5,7 +5,7 @@
   <button id="analyzeBtn" type="button">analyze</button>
   <button id="searchBtn" type="button">find flow</button>
   <button id="explorerBtn" type="button">explorer</button>
-  <button id="findObjectBtn" type="button">find object</button>
+  <button id="findObjectBtn" type="button">find</button>
 </div>
 
 <div class="nav-section nav-config" id="analyzeConfigSection">
@@ -74,12 +74,13 @@
   </div>
 
   <div id="findObjectPanel" class="card hidden">
-    <h3 id="findObjectPanelHeading">Find Object</h3>
-    <label id="findObjectIpLabel">IP
-      <input id="findObjectIp" type="text" placeholder="192.168.1.1 / fe80::3 / 172.16.40.3/24">
+    <h3 id="findObjectPanelHeading">Find</h3>
+    <label id="findInputLabel">Search Input
+      <input id="findInput" type="text" placeholder="192.168.1.1 / fe80::3 / 172.16.40.3/24 / permit ip any any">
     </label>
     <div id="findObjectActions" class="actions top-gap">
-      <button id="runFindObjectBtn" type="button">run find object</button>
+      <button id="runFindObjectBtn" type="button">find IP</button>
+      <button id="runFindStringBtn" type="button">find string</button>
     </div>
   </div>
 

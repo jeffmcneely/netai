@@ -128,6 +128,63 @@ def find_object_matches(
     return str(search_network), results, truncated
 
 
+def build_line_string_matches(
+    filename: str,
+    line_number: int,
+    line_text: str,
+    search_text: str,
+) -> List[dict]:
+    lowered_line = line_text.casefold()
+    lowered_search = search_text.casefold()
+    line_matches: List[dict] = []
+
+    start = 0
+    while True:
+        index = lowered_line.find(lowered_search, start)
+        if index < 0:
+            break
+
+        end = index + len(search_text)
+        line_matches.append(
+            {
+                "filename": filename,
+                "line_number": line_number,
+                "matched_object": line_text[index:end],
+                "line": line_text,
+                "capture": line_text[index:],
+            }
+        )
+        start = index + 1
+
+    return line_matches
+
+
+def find_string_matches(
+    search_text: str,
+    files_with_lines: Iterable[Tuple[str, Iterable[Tuple[int, str]]]],
+    max_results: int = 500,
+) -> tuple[str, List[dict], bool]:
+    normalized = str(search_text or "").strip()
+    if not normalized:
+        raise ValueError("find_text is required")
+
+    results: List[dict] = []
+    truncated = False
+
+    for filename, line_iter in files_with_lines:
+        for line_number, line_text in line_iter:
+            results.extend(build_line_string_matches(filename, line_number, line_text, normalized))
+            if len(results) >= max_results:
+                results = results[:max_results]
+                truncated = True
+                break
+        if truncated:
+            break
+
+    results.sort(key=lambda row: (row["filename"], row["line_number"], row["matched_object"]))
+    return normalized, results, truncated
+
+
 def normalize_max_results(raw_value: object, default: int = 500, max_allowed: int = 10000) -> int:
     if raw_value in {None, ""}:
         return default

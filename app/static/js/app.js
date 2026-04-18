@@ -234,19 +234,18 @@ function renderFindObjectTable(target, rows, page = 1) {
 
   const start = (page - 1) * PAGE_SIZE;
   const paged = rows.slice(start, start + PAGE_SIZE);
-  const header = '<tr><th>File</th><th>Line</th><th>Matched Object</th><th>Capture</th><th>View</th></tr>';
+  const header = '<tr><th>File</th><th>Line</th><th>Matched Object</th><th>Capture</th></tr>';
   const body = paged.map((row, idx) => {
     const rowIndex = start + idx;
     return `<tr>
       <td>${escapeHtml(row.filename || '')}</td>
-      <td>${escapeHtml(String(row.line_number || ''))}</td>
+      <td><a href="#" class="find-object-open-link" data-find-row-index="${rowIndex}">${escapeHtml(String(row.line_number || ''))}</a></td>
       <td>${escapeHtml(row.matched_object || '')}</td>
       <td>${escapeHtml(row.capture || '')}</td>
-      <td><button type="button" class="find-object-open-btn" data-find-row-index="${rowIndex}">open file</button></td>
     </tr>`;
   }).join('');
 
-  target.innerHTML = `<h4>Find Object Results (${rows.length})</h4><div class="table-wrap"><table>${header}${body}</table></div>`;
+  target.innerHTML = `<h4>Find Results (${rows.length})</h4><div class="table-wrap"><table>${header}${body}</table></div>`;
   return { pages: Math.ceil(rows.length / PAGE_SIZE), page };
 }
 
@@ -302,13 +301,13 @@ function renderNodePropertySelectionTable(nodeHostname, nodeData) {
   const tableBody = rows
     .map(([k, v]) => {
       const canSearchAcl = /^IP_Access_Lists\[\d+\]$/.test(k) && String(v || '').trim().length > 0;
-      const action = canSearchAcl
-        ? `<button type="button" class="explorer-acl-search-btn" data-node-hostname="${escapeHtml(nodeHostname)}" data-filter-name="${escapeHtml(String(v))}">search filters</button>`
-        : '';
-      return `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td><td>${action}</td></tr>`;
+      const valueHtml = canSearchAcl
+        ? `<a href="#" class="explorer-acl-search-link" data-node-hostname="${escapeHtml(nodeHostname)}" data-filter-name="${escapeHtml(String(v))}">${escapeHtml(String(v))}</a>`
+        : escapeHtml(String(v || ''));
+      return `<tr><th>${escapeHtml(k)}</th><td>${valueHtml}</td></tr>`;
     })
     .join('');
-  return `<h4>Node Properties</h4><table class="detail-table"><tr><th>Property</th><th>Value</th><th>Action</th></tr>${tableBody}</table>`;
+  return `<h4>Node Properties</h4><table class="detail-table"><tr><th>Property</th><th>Value</th></tr>${tableBody}</table>`;
 }
 
 function renderAclSearchResultsTable(rows) {
@@ -563,8 +562,9 @@ async function initAnalyzePage() {
   const findObjectBtn = document.getElementById('findObjectBtn');
   const searchPanel = document.getElementById('searchPanel');
   const findObjectPanel = document.getElementById('findObjectPanel');
-  const findObjectIp = document.getElementById('findObjectIp');
+  const findInput = document.getElementById('findInput');
   const runFindObjectBtn = document.getElementById('runFindObjectBtn');
+  const runFindStringBtn = document.getElementById('runFindStringBtn');
   const runSearchBtn = document.getElementById('runSearchBtn');
   const applyClientMatchBtn = document.getElementById('applyClientMatchBtn');
   const meta = document.getElementById('analysisMeta');
@@ -774,11 +774,12 @@ async function initAnalyzePage() {
       return;
     }
 
-    const aclSearchBtnEl = event.target.closest('.explorer-acl-search-btn');
-    if (aclSearchBtnEl) {
+    const aclSearchLinkEl = event.target.closest('.explorer-acl-search-link');
+    if (aclSearchLinkEl) {
+      event.preventDefault();
       try {
-        const nodeHostname = aclSearchBtnEl.getAttribute('data-node-hostname') || '';
-        const filterName = aclSearchBtnEl.getAttribute('data-filter-name') || '';
+        const nodeHostname = aclSearchLinkEl.getAttribute('data-node-hostname') || '';
+        const filterName = aclSearchLinkEl.getAttribute('data-filter-name') || '';
         const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
         const res = await fetch('/api/node-acl-search', {
           method: 'POST',
@@ -885,12 +886,13 @@ async function initAnalyzePage() {
   });
 
   findObjectResults.addEventListener('click', async (event) => {
-    const btn = event.target.closest('.find-object-open-btn');
-    if (!btn) {
+    const link = event.target.closest('.find-object-open-link');
+    if (!link) {
       return;
     }
+    event.preventDefault();
 
-    const rowIndex = Number(btn.getAttribute('data-find-row-index'));
+    const rowIndex = Number(link.getAttribute('data-find-row-index'));
     const row = findObjectRows[rowIndex];
     if (!row) {
       return;
@@ -995,7 +997,7 @@ async function initAnalyzePage() {
 
   runFindObjectBtn.addEventListener('click', async () => {
     try {
-      const ip = (findObjectIp.value || '').trim();
+      const ip = (findInput.value || '').trim();
       if (!ip) {
         throw new Error('IP is required');
       }
@@ -1013,7 +1015,40 @@ async function initAnalyzePage() {
       });
       const json = await res.json();
       if (json.status !== 'success') {
-        throw new Error(json.error?.message || 'Find object failed');
+        throw new Error(json.error?.message || 'Find IP failed');
+      }
+
+      findObjectRows = json.data.results || [];
+      closeDetailFlyout();
+      closeFileViewerFlyout();
+      renderFindRows(findObjectRows);
+    } catch (err) {
+      showMessage(findObjectResults, `<p>${escapeHtml(err.message)}</p>`);
+      findObjectPager.classList.add('hidden');
+    }
+  });
+
+  runFindStringBtn.addEventListener('click', async () => {
+    try {
+      const findText = (findInput.value || '').trim();
+      if (!findText) {
+        throw new Error('Find string is required');
+      }
+
+      const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
+      const body = {
+        ...folderInfo,
+        find_text: findText,
+      };
+
+      const res = await fetch('/api/find-string', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (json.status !== 'success') {
+        throw new Error(json.error?.message || 'Find string failed');
       }
 
       findObjectRows = json.data.results || [];
