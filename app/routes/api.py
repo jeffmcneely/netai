@@ -367,9 +367,13 @@ def acl_verify():
 def acl_generate_commands():
     try:
         payload = request.get_json(force=True)
-        current_acl, candidate_acl = parse_acl_generate_commands_payload(payload)
+        mapped_platform, current_acl, candidate_acl = parse_acl_generate_commands_payload(payload)
 
-        commands = _openai_manager().generate_acl_commands(current_acl=current_acl, candidate_acl=candidate_acl)
+        commands = _openai_manager().generate_acl_commands(
+            platform_context=mapped_platform,
+            current_acl=current_acl,
+            candidate_acl=candidate_acl,
+        )
         return ok({"commands": commands})
     except ValidationError as exc:
         return fail(str(exc), "VALIDATION_ERROR", status=400)

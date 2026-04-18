@@ -7,6 +7,7 @@ FOLDER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 ACL_PLATFORMS = {
     "arista",
     "bigip",
+    "ciscoasa",
     "cisco-nx",
     "cisco-xr",
     "force10",
@@ -14,6 +15,18 @@ ACL_PLATFORMS = {
     "juniper",
     "mrv",
     "paloalto",
+}
+ACL_PLATFORM_PROMPT_MAP = {
+    "arista": "arista",
+    "bigip": "f5 bigip",
+    "cisco-nx": "cisco NX-OS",
+    "cisco-xr": "cisco IOS-XR",
+    "force10": "force10",
+    "foundry": "foundry",
+    "juniper": "juniper junos",
+    "mrv": "mrv",
+    "paloalto": "palo alto",
+    "ciscoasa": "cisco asa",
 }
 
 
@@ -106,6 +119,16 @@ def validate_acl_platform(raw_value: object) -> str:
     return platform
 
 
+def map_acl_platform_prompt(raw_value: object) -> str:
+    platform = str(raw_value or "").strip().lower()
+    if not platform:
+        raise ValidationError("platform is required")
+    if platform not in ACL_PLATFORM_PROMPT_MAP:
+        allowed = ", ".join(sorted(ACL_PLATFORM_PROMPT_MAP))
+        raise ValidationError(f"platform must be one of: {allowed}")
+    return ACL_PLATFORM_PROMPT_MAP[platform]
+
+
 def parse_acl_optimize_payload(payload: dict) -> tuple[str, str]:
     if payload is None:
         raise ValidationError("JSON payload is required")
@@ -134,10 +157,11 @@ def parse_acl_verify_payload(payload: dict) -> tuple[str, str, str]:
     return platform, original_acl, candidate_acl
 
 
-def parse_acl_generate_commands_payload(payload: dict) -> tuple[str, str]:
+def parse_acl_generate_commands_payload(payload: dict) -> tuple[str, str, str]:
     if payload is None:
         raise ValidationError("JSON payload is required")
 
+    mapped_platform = map_acl_platform_prompt(payload.get("platform"))
     current_acl = str(payload.get("current", "")).strip()
     candidate_acl = str(payload.get("candidate", "")).strip()
 
@@ -146,4 +170,4 @@ def parse_acl_generate_commands_payload(payload: dict) -> tuple[str, str]:
     if not candidate_acl:
         raise ValidationError("candidate is required")
 
-    return current_acl, candidate_acl
+    return mapped_platform, current_acl, candidate_acl

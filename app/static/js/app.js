@@ -321,7 +321,7 @@ function renderFindObjectTable(target, rows, page = 1) {
 function renderAclVerifyTable(target, rows) {
   target.classList.remove('hidden');
   if (!Array.isArray(rows) || rows.length === 0) {
-    target.innerHTML = '<p>No compareFilters rows returned.</p>';
+    target.innerHTML = '<p>no access changes found.</p>';
     return;
   }
 
@@ -434,11 +434,117 @@ function renderAclDiffTable(target, currentText, candidateText) {
   syncUnchangedVisibility();
 }
 
+function markdownInlineToHtml(text) {
+  const escaped = escapeHtml(String(text || ''));
+  return escaped
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+}
+
+function markdownTextBlockToHtml(blockText) {
+  const lines = String(blockText || '').split('\n');
+  const html = [];
+  let inUl = false;
+  let inOl = false;
+
+  const closeLists = () => {
+    if (inUl) {
+      html.push('</ul>');
+      inUl = false;
+    }
+    if (inOl) {
+      html.push('</ol>');
+      inOl = false;
+    }
+  };
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      closeLists();
+      return;
+    }
+
+    if (trimmed.startsWith('### ')) {
+      closeLists();
+      html.push(`<h3>${markdownInlineToHtml(trimmed.slice(4))}</h3>`);
+      return;
+    }
+
+    if (trimmed.startsWith('## ')) {
+      closeLists();
+      html.push(`<h2>${markdownInlineToHtml(trimmed.slice(3))}</h2>`);
+      return;
+    }
+
+    if (trimmed.startsWith('# ')) {
+      closeLists();
+      html.push(`<h1>${markdownInlineToHtml(trimmed.slice(2))}</h1>`);
+      return;
+    }
+
+    if (/^[-*]\s+/.test(trimmed)) {
+      if (inOl) {
+        html.push('</ol>');
+        inOl = false;
+      }
+      if (!inUl) {
+        html.push('<ul>');
+        inUl = true;
+      }
+      html.push(`<li>${markdownInlineToHtml(trimmed.replace(/^[-*]\s+/, ''))}</li>`);
+      return;
+    }
+
+    if (/^\d+\.\s+/.test(trimmed)) {
+      if (inUl) {
+        html.push('</ul>');
+        inUl = false;
+      }
+      if (!inOl) {
+        html.push('<ol>');
+        inOl = true;
+      }
+      html.push(`<li>${markdownInlineToHtml(trimmed.replace(/^\d+\.\s+/, ''))}</li>`);
+      return;
+    }
+
+    closeLists();
+    html.push(`<p>${markdownInlineToHtml(trimmed)}</p>`);
+  });
+
+  closeLists();
+  return html.join('');
+}
+
+function markdownToHtml(markdownText) {
+  const source = String(markdownText || '');
+  const parts = source.split('```');
+  const html = [];
+
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    if (index % 2 === 0) {
+      html.push(markdownTextBlockToHtml(part));
+      continue;
+    }
+
+    const newlineIndex = part.indexOf('\n');
+    const hasLang = newlineIndex >= 0;
+    const rawLang = hasLang ? part.slice(0, newlineIndex).trim() : '';
+    const codeBody = hasLang ? part.slice(newlineIndex + 1) : part;
+    const className = rawLang ? ` class="language-${escapeHtml(rawLang)}"` : '';
+    html.push(`<pre><code${className}>${escapeHtml(codeBody)}</code></pre>`);
+  }
+
+  return html.join('');
+}
+
 function renderAclCommandsOutput(target, commandsText) {
   target.classList.remove('hidden');
   target.innerHTML = `
     <h4>Generated Commands</h4>
-    <pre class="acl-command-output">${escapeHtml(String(commandsText || ''))}</pre>
+    <div class="acl-command-output">${markdownToHtml(commandsText)}</div>
   `;
 }
 
@@ -1414,6 +1520,7 @@ async function initAclOptimizePage() {
 
   generateCommandsBtn.addEventListener('click', async () => {
     try {
+      const platform = (platformInput.value || '').trim();
       const current = (currentInput.value || '').trim();
       const candidate = (candidateInput.value || '').trim();
       if (!current) {
@@ -1426,7 +1533,7 @@ async function initAclOptimizePage() {
       const res = await fetch('/api/acl/generate-commands', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ current, candidate }),
+        body: JSON.stringify({ platform, current, candidate }),
       });
       const json = await res.json();
       if (json.status !== 'success') {
@@ -1459,12 +1566,31 @@ async function initAclOptimizePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ platform, current, candidate }),
       });
-      const json = await res.json();
-      if (json.status !== 'success') {
-        throw new Error(json.error?.message || 'ACL verify failed');
+      let json = null;
+      try {
+        json = await res.json();
+      } catch (parseErr) {
+        if (!res.ok) {
+          throw new Error('backend error. try again');
+        }
+        throw parseErr;
       }
 
-      const rows = json.data?.rows || [];
+      if (!res.ok || json.status !== 'success') {
+        const backendErrorCode = json?.error?.code || '';
+        if (res.status >= 500 || backendErrorCode === 'ACL_VERIFY_ERROR') {
+          throw new Error('backend error. try again');
+        }
+        throw new Error(json?.error?.message || 'ACL verify failed');
+      }
+
+      const rows = Array.isArray(json.data?.rows) ? json.data.rows : [];
+      if (rows.length === 0) {
+        showMessage(status, '<p>no access changes found.</p>');
+        showMessage(verifyResults, '<p>no access changes found.</p>');
+        return;
+      }
+
       showMessage(
         status,
         `<p>Verified snapshots: ${escapeHtml(json.data?.compressed_snapshot || 'compressed')} vs ${escapeHtml(json.data?.original_snapshot || 'original')}</p>`

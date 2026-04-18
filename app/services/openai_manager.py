@@ -83,13 +83,16 @@ class OpenAIManager:
 
         return output_text
 
-    def generate_acl_commands(self, current_acl: str, candidate_acl: str) -> str:
+    def generate_acl_commands(self, platform_context: str, current_acl: str, candidate_acl: str) -> str:
         if not self.api_key:
             raise RuntimeError("OPENAI_API_KEY is not configured")
 
         prompt = (
+            f"this is a section from a {platform_context} config. add appropriate checkpoint/backup/revert commands at beginning and end if appropriate. "
             "provide commands to change from current acl list to candidate acl list "
-            f"current: {current_acl} candidate: {candidate_acl}"
+            f"current: {current_acl} candidate: {candidate_acl}. "
+            "Return the result as Markdown with clear sections and fenced code blocks for commands. "
+            "Do not include any non-Markdown wrapper text."
         )
 
         try:

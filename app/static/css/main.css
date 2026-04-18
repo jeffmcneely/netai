@@ -588,10 +588,35 @@ th {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f7fafc;
-  font-family: "Menlo", "Monaco", monospace;
   font-size: 0.84rem;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.acl-command-output pre,
+.acl-command-output code {
+  font-family: "Menlo", "Monaco", monospace;
+}
+
+.acl-command-output pre {
+  margin: 8px 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  white-space: pre-wrap;
+}
+
+.acl-command-output h1,
+.acl-command-output h2,
+.acl-command-output h3,
+.acl-command-output p {
+  margin: 8px 0;
+}
+
+.acl-command-output ul,
+.acl-command-output ol {
+  margin: 8px 0;
+  padding-left: 20px;
 }
 
 @media (max-width: 900px) {
