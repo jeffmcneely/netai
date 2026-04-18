@@ -1001,11 +1001,14 @@ async function initAnalyzePage() {
       if (!ip) {
         throw new Error('IP is required');
       }
+      const selectedFindMode = document.querySelector('input[name="findIpMode"]:checked');
+      const findMode = selectedFindMode ? selectedFindMode.value : 'contains';
 
       const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
       const body = {
         ...folderInfo,
         ip,
+        find_mode: findMode,
       };
 
       const res = await fetch('/api/find-object', {

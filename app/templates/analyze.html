@@ -78,6 +78,17 @@
     <label id="findInputLabel">Search Input
       <input id="findInput" type="text" placeholder="192.168.1.1 / fe80::3 / 172.16.40.3/24 / permit ip any any">
     </label>
+    <fieldset id="findIpModeFieldset" class="top-gap">
+      <legend>Find IP mode</legend>
+      <label id="findIpModeContainsLabel" class="radio-row">
+        <input id="findIpModeContains" type="radio" name="findIpMode" value="contains" checked>
+        <span>include contains</span>
+      </label>
+      <label id="findIpModeExactLabel" class="radio-row">
+        <input id="findIpModeExact" type="radio" name="findIpMode" value="exact">
+        <span>exact IP</span>
+      </label>
+    </fieldset>
     <div id="findObjectActions" class="actions top-gap">
       <button id="runFindObjectBtn" type="button">find IP</button>
       <button id="runFindStringBtn" type="button">find string</button>

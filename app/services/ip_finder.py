@@ -83,12 +83,16 @@ def build_line_matches(
     line_number: int,
     line_text: str,
     search_network: IP_NETWORK,
+    find_mode: str = "contains",
 ) -> List[dict]:
     line_matches: List[dict] = []
     for candidate in iter_line_candidates(line_text):
         if candidate.network.version != search_network.version:
             continue
-        if not search_network.subnet_of(candidate.network):
+        if find_mode == "exact":
+            if search_network != candidate.network:
+                continue
+        elif not search_network.subnet_of(candidate.network):
             continue
 
         line_matches.append(
@@ -109,6 +113,7 @@ def find_object_matches(
     search_input: str,
     files_with_lines: Iterable[Tuple[str, Iterable[Tuple[int, str]]]],
     max_results: int = 500,
+    find_mode: str = "contains",
 ) -> tuple[str, List[dict], bool]:
     search_network = parse_search_network(search_input)
     results: List[dict] = []
@@ -116,7 +121,7 @@ def find_object_matches(
 
     for filename, line_iter in files_with_lines:
         for line_number, line_text in line_iter:
-            results.extend(build_line_matches(filename, line_number, line_text, search_network))
+            results.extend(build_line_matches(filename, line_number, line_text, search_network, find_mode=find_mode))
             if len(results) >= max_results:
                 results = results[:max_results]
                 truncated = True

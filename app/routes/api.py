@@ -82,7 +82,7 @@ def _normalize_acl_filter_name(raw_value: object) -> str:
     return filter_name
 
 
-def _parse_find_object_payload(payload: dict) -> tuple[str, str, int]:
+def _parse_find_object_payload(payload: dict) -> tuple[str, str, int, str]:
     if payload is None:
         raise ValidationError("JSON payload is required")
 
@@ -98,7 +98,13 @@ def _parse_find_object_payload(payload: dict) -> tuple[str, str, int]:
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
 
-    return config_folder, parsed_values[0], max_results
+    raw_find_mode = str(payload.get("find_mode", "contains")).strip().lower()
+    if not raw_find_mode:
+        raw_find_mode = "contains"
+    if raw_find_mode not in {"contains", "exact"}:
+        raise ValidationError("find_mode must be either 'contains' or 'exact'")
+
+    return config_folder, parsed_values[0], max_results, raw_find_mode
 
 
 def _parse_find_string_payload(payload: dict) -> tuple[str, str, int]:
@@ -296,7 +302,7 @@ def node_acl_search():
 def find_object():
     try:
         payload = request.get_json(force=True)
-        config_folder, search_ip, max_results = _parse_find_object_payload(payload)
+        config_folder, search_ip, max_results, find_mode = _parse_find_object_payload(payload)
 
         s3 = _s3_manager()
         files = s3.list_config_files(config_folder)
@@ -306,6 +312,7 @@ def find_object():
             search_input=search_ip,
             files_with_lines=files_with_lines,
             max_results=max_results,
+            find_mode=find_mode,
         )
 
         return ok(

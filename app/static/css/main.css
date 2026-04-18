@@ -277,6 +277,18 @@ button:hover {
   grid-template-columns: repeat(2, minmax(220px, 1fr));
 }
 
+#findIpModeFieldset {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 100%;
+}
+
+#findIpModeFieldset .radio-row {
+  display: inline-flex;
+  width: auto;
+}
+
 .top-gap { margin-top: 12px; }
 .hidden { display: none; }
 
