@@ -1,6 +1,7 @@
 from io import BytesIO
 import logging
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
+from uuid import uuid4
 
 
 logger = logging.getLogger(__name__)
@@ -156,6 +157,131 @@ class BatfishManager:
         )
         frame = query.answer(snapshot=snapshot_name, reference_snapshot=reference_snapshot).frame()
         return _frame_to_records(frame)
+
+    def reduce_acl_remove_junk(
+        self,
+        platform: str,
+        current_acl: str,
+        start_line: int = 2,
+        progress_cb: Optional[Callable[[Dict[str, object]], None]] = None,
+    ) -> Dict[str, object]:
+        candidate_lines = str(current_acl).splitlines()
+        if len(candidate_lines) < 2:
+            return {
+                "final_candidate": str(current_acl or ""),
+                "removed_lines": [],
+                "iterations": [],
+                "summary": {
+                    "total_lines_considered": 0,
+                    "lines_removed": 0,
+                    "start_line": start_line,
+                },
+            }
+
+        baseline_snapshot = self.init_snapshot_from_text(
+            current_acl,
+            platform=platform,
+            snapshot_name=f"remove-junk-baseline-{uuid4().hex}",
+        )
+        active = [True] * len(candidate_lines)
+        iterations: List[Dict[str, object]] = []
+        removed_lines: List[Dict[str, object]] = []
+
+        first_idx = max(start_line - 1, 0)
+        candidate_indices = list(range(first_idx, len(candidate_lines)))
+        total_iterations = len(candidate_indices)
+
+        for i, line_idx in enumerate(candidate_indices, start=1):
+            line_text = candidate_lines[line_idx]
+            if not line_text.strip():
+                # Skip blank lines to avoid noisy no-op comparisons.
+                iteration_record = {
+                    "iteration": i,
+                    "line_number": line_idx + 1,
+                    "line_text": line_text,
+                    "removed": False,
+                    "compare_rows": 1,
+                    "message": "skipped blank line",
+                }
+                iterations.append(iteration_record)
+                if progress_cb is not None:
+                    progress_cb(
+                        {
+                            "iteration": i,
+                            "total_iterations": total_iterations,
+                            "line_number": line_idx + 1,
+                            "lines_removed": len(removed_lines),
+                            "last_decision": "skipped",
+                            "last_compare_rows": 1,
+                            "message": "skipped blank line",
+                        }
+                    )
+                continue
+
+            active[line_idx] = False
+            candidate_text = "\n".join(
+                candidate_lines[pos] for pos, keep in enumerate(active) if keep
+            )
+            test_snapshot = self.init_snapshot_from_text(
+                candidate_text,
+                platform=platform,
+                snapshot_name=f"remove-junk-test-{uuid4().hex}",
+            )
+            rows = self.run_compare_filters(
+                snapshot_name=test_snapshot,
+                reference_snapshot=baseline_snapshot,
+            )
+            rows_count = len(rows)
+
+            if rows_count == 0:
+                removed_lines.append(
+                    {
+                        "line_number": line_idx + 1,
+                        "line_text": line_text,
+                    }
+                )
+                removed = True
+                message = "removed"
+            else:
+                active[line_idx] = True
+                removed = False
+                message = "restored due to compareFilters diff"
+
+            iteration_record = {
+                "iteration": i,
+                "line_number": line_idx + 1,
+                "line_text": line_text,
+                "removed": removed,
+                "compare_rows": rows_count,
+                "message": message,
+            }
+            iterations.append(iteration_record)
+            if progress_cb is not None:
+                progress_cb(
+                    {
+                        "iteration": i,
+                        "total_iterations": total_iterations,
+                        "line_number": line_idx + 1,
+                        "lines_removed": len(removed_lines),
+                        "last_decision": "removed" if removed else "restored",
+                        "last_compare_rows": rows_count,
+                        "message": message,
+                    }
+                )
+
+        final_candidate = "\n".join(
+            candidate_lines[pos] for pos, keep in enumerate(active) if keep
+        )
+        return {
+            "final_candidate": final_candidate,
+            "removed_lines": removed_lines,
+            "iterations": iterations,
+            "summary": {
+                "total_lines_considered": total_iterations,
+                "lines_removed": len(removed_lines),
+                "start_line": start_line,
+            },
+        }
 
     def run_filter_line_reachability(self) -> List[Dict[str, object]]:
         bf = self._session()

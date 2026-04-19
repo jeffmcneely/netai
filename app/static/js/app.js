@@ -801,6 +801,12 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+function delay(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function readSearchFilters() {
   const tcpFlags = Array.from(document.querySelectorAll('.tcp-flag:checked')).map((cb) => cb.value);
   return {
@@ -1551,9 +1557,11 @@ async function initAclOptimizePage() {
   const currentInput = document.getElementById('aclCurrent');
   const candidateInput = document.getElementById('aclCandidate');
   const optimizeBtn = document.getElementById('aclOptimizeBtn');
+  const removeJunkBtn = document.getElementById('aclRemoveJunkBtn');
   const generateCommandsBtn = document.getElementById('aclGenerateCommandsBtn');
   const verifyBtn = document.getElementById('aclVerifyBtn');
   const status = document.getElementById('aclOptimizeStatus');
+  const removeJunkProgress = document.getElementById('aclRemoveJunkProgress');
   const diffResults = document.getElementById('aclDiffResults');
   const verifyResults = document.getElementById('aclVerifyResults');
 
@@ -1586,6 +1594,90 @@ async function initAclOptimizePage() {
       showMessage(status, '<p>Candidate ACL updated.</p>');
     } catch (err) {
       showMessage(status, `<p>${escapeHtml(err.message)}</p>`);
+    }
+  });
+
+  removeJunkBtn.addEventListener('click', async () => {
+    removeJunkBtn.disabled = true;
+    candidateInput.value = '';
+    verifyResults.innerHTML = '';
+    verifyResults.classList.add('hidden');
+    removeJunkProgress.innerHTML = '';
+    removeJunkProgress.classList.add('hidden');
+
+    try {
+      const platform = (platformInput.value || '').trim();
+      const current = (currentInput.value || '').trim();
+      if (!current) {
+        throw new Error('current is required');
+      }
+
+      const startRes = await fetch('/api/acl/remove-junk/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform, current, start_line: 2 }),
+      });
+      const startJson = await startRes.json();
+      if (!startRes.ok || startJson.status !== 'success') {
+        throw new Error(startJson.error?.message || 'remove junk failed to start');
+      }
+
+      const jobId = startJson.data?.job_id;
+      if (!jobId) {
+        throw new Error('remove junk job id missing');
+      }
+
+      showMessage(removeJunkProgress, '<p>Remove junk job started from current config.</p>');
+
+      let state = 'queued';
+      while (state === 'queued' || state === 'running') {
+        const statusRes = await fetch(`/api/acl/remove-junk/status/${encodeURIComponent(jobId)}`);
+        const statusJson = await statusRes.json();
+        if (!statusRes.ok || statusJson.status !== 'success') {
+          throw new Error(statusJson.error?.message || 'failed to fetch remove junk status');
+        }
+
+        const progress = statusJson.data?.progress || {};
+        const iteration = Number(progress.iteration || 0);
+        const totalIterations = Number(progress.total_iterations || 0);
+        const linesRemoved = Number(progress.lines_removed || 0);
+        const lineNumber = progress.line_number || '-';
+        const detailMessage = progress.message || 'running';
+        showMessage(
+          removeJunkProgress,
+          `<p>iteration ${iteration}/${totalIterations}, ${linesRemoved} lines removed, testing line ${escapeHtml(String(lineNumber))}.</p><p>${escapeHtml(detailMessage)}</p>`
+        );
+
+        state = statusJson.data?.state || 'failed';
+        if (state === 'queued' || state === 'running') {
+          await delay(1200);
+        }
+      }
+
+      if (state !== 'completed') {
+        const statusRes = await fetch(`/api/acl/remove-junk/status/${encodeURIComponent(jobId)}`);
+        const statusJson = await statusRes.json();
+        throw new Error(statusJson?.data?.error || statusJson?.error?.message || 'remove junk job failed');
+      }
+
+      const resultRes = await fetch(`/api/acl/remove-junk/result/${encodeURIComponent(jobId)}`);
+      const resultJson = await resultRes.json();
+      if (!resultRes.ok || resultJson.status !== 'success') {
+        throw new Error(resultJson.error?.message || 'remove junk result failed');
+      }
+
+      candidateInput.value = resultJson.data?.final_candidate || '';
+      const summary = resultJson.data?.summary || {};
+      showMessage(
+        status,
+        `<p>remove junk completed. considered ${escapeHtml(String(summary.total_lines_considered || 0))} lines, removed ${escapeHtml(String(summary.lines_removed || 0))} lines.</p>`
+      );
+      showMessage(removeJunkProgress, '<p>Remove junk complete. Candidate field updated.</p>');
+    } catch (err) {
+      showMessage(status, `<p>${escapeHtml(err.message)}</p>`);
+      showMessage(removeJunkProgress, '<p>Remove junk failed.</p>');
+    } finally {
+      removeJunkBtn.disabled = false;
     }
   });
 

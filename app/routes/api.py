@@ -1,7 +1,10 @@
 from flask import Blueprint, current_app, request
 import json
 from collections import Counter
+from datetime import datetime, timedelta, timezone
+from threading import Lock, Thread
 from typing import Optional
+from uuid import uuid4
 
 from app.services.batfish_manager import BatfishManager, build_header_constraints
 from app.services.claude_manager import ClaudeManager, ClaudeTimeoutError
@@ -13,6 +16,7 @@ from app.utils.validators import (
     ValidationError,
     parse_acl_generate_commands_payload,
     parse_acl_optimize_payload,
+    parse_acl_remove_junk_payload,
     parse_acl_verify_payload,
     parse_csv,
     parse_int_values,
@@ -24,6 +28,99 @@ from app.utils.validators import (
 
 
 api_bp = Blueprint("api", __name__)
+_ACL_REMOVE_JUNK_JOBS: dict[str, dict] = {}
+_ACL_REMOVE_JUNK_LOCK = Lock()
+_ACL_REMOVE_JUNK_TTL_SECONDS = 900
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _iso_now() -> str:
+    return _utc_now().isoformat()
+
+
+def _cleanup_remove_junk_jobs() -> None:
+    cutoff = _utc_now() - timedelta(seconds=_ACL_REMOVE_JUNK_TTL_SECONDS)
+    with _ACL_REMOVE_JUNK_LOCK:
+        stale_ids = []
+        for job_id, job in _ACL_REMOVE_JUNK_JOBS.items():
+            if job.get("state") not in {"completed", "failed"}:
+                continue
+            updated_at = job.get("updated_at")
+            try:
+                updated_dt = datetime.fromisoformat(str(updated_at))
+            except Exception:
+                stale_ids.append(job_id)
+                continue
+            if updated_dt < cutoff:
+                stale_ids.append(job_id)
+
+        for job_id in stale_ids:
+            _ACL_REMOVE_JUNK_JOBS.pop(job_id, None)
+
+
+def _get_remove_junk_job(job_id: str) -> Optional[dict]:
+    with _ACL_REMOVE_JUNK_LOCK:
+        job = _ACL_REMOVE_JUNK_JOBS.get(job_id)
+        if not job:
+            return None
+        return dict(job)
+
+
+def _run_remove_junk_job(
+    job_id: str,
+    platform: str,
+    current_acl: str,
+    start_line: int,
+    batfish_server: str,
+) -> None:
+    def _publish_progress(update: dict) -> None:
+        with _ACL_REMOVE_JUNK_LOCK:
+            job = _ACL_REMOVE_JUNK_JOBS.get(job_id)
+            if not job:
+                return
+            progress = dict(job.get("progress") or {})
+            progress.update(update)
+            job["progress"] = progress
+            job["updated_at"] = _iso_now()
+
+    try:
+        with _ACL_REMOVE_JUNK_LOCK:
+            job = _ACL_REMOVE_JUNK_JOBS.get(job_id)
+            if not job:
+                return
+            job["state"] = "running"
+            job["updated_at"] = _iso_now()
+
+        bf = BatfishManager(server=batfish_server)
+        result = bf.reduce_acl_remove_junk(
+            platform=platform,
+            current_acl=current_acl,
+            start_line=start_line,
+            progress_cb=_publish_progress,
+        )
+
+        with _ACL_REMOVE_JUNK_LOCK:
+            job = _ACL_REMOVE_JUNK_JOBS.get(job_id)
+            if not job:
+                return
+            job["state"] = "completed"
+            job["result"] = result
+            job["updated_at"] = _iso_now()
+            job["progress"] = {
+                **(job.get("progress") or {}),
+                "message": "completed",
+            }
+    except Exception as exc:
+        with _ACL_REMOVE_JUNK_LOCK:
+            job = _ACL_REMOVE_JUNK_JOBS.get(job_id)
+            if not job:
+                return
+            job["state"] = "failed"
+            job["error"] = str(exc)
+            job["updated_at"] = _iso_now()
 
 
 def _s3_manager() -> S3Manager:
@@ -402,6 +499,101 @@ def acl_generate_commands():
         return fail(str(exc), "LLM_TIMEOUT", status=504)
     except Exception as exc:
         return fail(str(exc), "ACL_GENERATE_COMMANDS_ERROR", status=500)
+
+
+@api_bp.post("/acl/remove-junk/start")
+def acl_remove_junk_start():
+    try:
+        _cleanup_remove_junk_jobs()
+        payload = request.get_json(force=True)
+        platform, current_acl, start_line = parse_acl_remove_junk_payload(payload)
+
+        job_id = uuid4().hex
+        new_job = {
+            "job_id": job_id,
+            "state": "queued",
+            "created_at": _iso_now(),
+            "updated_at": _iso_now(),
+            "error": None,
+            "progress": {
+                "iteration": 0,
+                "total_iterations": max(len(current_acl.splitlines()) - max(start_line - 1, 0), 0),
+                "line_number": None,
+                "lines_removed": 0,
+                "last_decision": "queued",
+                "last_compare_rows": None,
+                "message": "queued",
+            },
+            "result": None,
+        }
+
+        with _ACL_REMOVE_JUNK_LOCK:
+            _ACL_REMOVE_JUNK_JOBS[job_id] = new_job
+
+        batfish_server = current_app.config.get("BATFISH_SERVER", "")
+        worker = Thread(
+            target=_run_remove_junk_job,
+            args=(job_id, platform, current_acl, start_line, batfish_server),
+            daemon=True,
+        )
+        worker.start()
+
+        return ok({"job_id": job_id, "state": "queued"}, status=202)
+    except ValidationError as exc:
+        return fail(str(exc), "VALIDATION_ERROR", status=400)
+    except Exception as exc:
+        return fail(str(exc), "ACL_REMOVE_JUNK_START_ERROR", status=500)
+
+
+@api_bp.get("/acl/remove-junk/status/<job_id>")
+def acl_remove_junk_status(job_id: str):
+    try:
+        _cleanup_remove_junk_jobs()
+        job = _get_remove_junk_job(job_id)
+        if not job:
+            return fail("job not found", "JOB_NOT_FOUND", status=404)
+
+        return ok(
+            {
+                "job_id": job_id,
+                "state": job.get("state"),
+                "created_at": job.get("created_at"),
+                "updated_at": job.get("updated_at"),
+                "progress": job.get("progress") or {},
+                "error": job.get("error"),
+            }
+        )
+    except Exception as exc:
+        return fail(str(exc), "ACL_REMOVE_JUNK_STATUS_ERROR", status=500)
+
+
+@api_bp.get("/acl/remove-junk/result/<job_id>")
+def acl_remove_junk_result(job_id: str):
+    try:
+        _cleanup_remove_junk_jobs()
+        job = _get_remove_junk_job(job_id)
+        if not job:
+            return fail("job not found", "JOB_NOT_FOUND", status=404)
+
+        state = job.get("state")
+        if state == "failed":
+            return fail(job.get("error") or "job failed", "JOB_FAILED", status=500)
+        if state != "completed":
+            return fail("job is not completed", "JOB_NOT_COMPLETED", status=409)
+
+        result = job.get("result") or {}
+        return ok(
+            {
+                "job_id": job_id,
+                "state": state,
+                "final_candidate": result.get("final_candidate", ""),
+                "removed_lines": result.get("removed_lines") or [],
+                "iterations": result.get("iterations") or [],
+                "summary": result.get("summary") or {},
+            }
+        )
+    except Exception as exc:
+        return fail(str(exc), "ACL_REMOVE_JUNK_RESULT_ERROR", status=500)
 
 
 @api_bp.post("/upload")

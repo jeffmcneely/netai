@@ -176,6 +176,27 @@ def parse_acl_verify_payload(payload: dict) -> tuple[str, str, str]:
     return platform, original_acl, candidate_acl
 
 
+def parse_acl_remove_junk_payload(payload: dict) -> tuple[str, str, int]:
+    if payload is None:
+        raise ValidationError("JSON payload is required")
+
+    platform = validate_acl_platform(payload.get("platform"))
+    original_acl = str(payload.get("current", "")).strip()
+
+    if not original_acl:
+        raise ValidationError("current is required")
+
+    raw_start_line = payload.get("start_line", 2)
+    try:
+        start_line = int(raw_start_line)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError("start_line must be an integer") from exc
+    if start_line < 1:
+        raise ValidationError("start_line must be greater than 0")
+
+    return platform, original_acl, start_line
+
+
 def parse_acl_generate_commands_payload(payload: dict) -> tuple[str, str, str, str | None]:
     if payload is None:
         raise ValidationError("JSON payload is required")
