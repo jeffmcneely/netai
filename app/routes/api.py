@@ -4,6 +4,7 @@ from collections import Counter
 from typing import Optional
 
 from app.services.batfish_manager import BatfishManager, build_header_constraints
+from app.services.claude_manager import ClaudeManager, ClaudeTimeoutError
 from app.services.ip_finder import find_object_matches, find_string_matches, normalize_max_results
 from app.services.openai_manager import OpenAIManager, OpenAITimeoutError
 from app.services.s3_manager import S3Manager
@@ -44,6 +45,21 @@ def _openai_manager(model_override: Optional[str] = None) -> OpenAIManager:
         api_key=current_app.config.get("OPENAI_API_KEY", ""),
         model=model,
     )
+
+
+def _claude_manager(model_override: Optional[str] = None) -> ClaudeManager:
+    model = model_override or current_app.config.get("CLAUDE_MODEL", "claude-sonnet-4-5")
+    return ClaudeManager(
+        api_key=current_app.config.get("CLAUDE_API_KEY", ""),
+        model=model,
+    )
+
+
+def _acl_llm_manager(model_override: Optional[str] = None):
+    model = (model_override or current_app.config.get("OPENAI_MODEL", "gpt-5.4")).strip()
+    if model.startswith("claude"):
+        return _claude_manager(model)
+    return _openai_manager(model)
 
 
 def _is_truthy(value) -> bool:
@@ -316,7 +332,7 @@ def acl_optimize():
         payload = request.get_json(force=True)
         platform, current_acl, model = parse_acl_optimize_payload(payload)
 
-        optimized_acl = _openai_manager(model).optimize_acl(current_acl)
+        optimized_acl = _acl_llm_manager(model).optimize_acl(current_acl)
         return ok(
             {
                 "platform": platform,
@@ -326,8 +342,8 @@ def acl_optimize():
         )
     except ValidationError as exc:
         return fail(str(exc), "VALIDATION_ERROR", status=400)
-    except OpenAITimeoutError as exc:
-        return fail(str(exc), "OPENAI_TIMEOUT", status=504)
+    except (OpenAITimeoutError, ClaudeTimeoutError) as exc:
+        return fail(str(exc), "LLM_TIMEOUT", status=504)
     except Exception as exc:
         return fail(str(exc), "ACL_OPTIMIZE_ERROR", status=500)
 
@@ -374,7 +390,7 @@ def acl_generate_commands():
         payload = request.get_json(force=True)
         mapped_platform, current_acl, candidate_acl, model = parse_acl_generate_commands_payload(payload)
 
-        commands = _openai_manager(model).generate_acl_commands(
+        commands = _acl_llm_manager(model).generate_acl_commands(
             platform_context=mapped_platform,
             current_acl=current_acl,
             candidate_acl=candidate_acl,
@@ -382,8 +398,8 @@ def acl_generate_commands():
         return ok({"commands": commands, "model": model or current_app.config.get("OPENAI_MODEL", "gpt-5.4")})
     except ValidationError as exc:
         return fail(str(exc), "VALIDATION_ERROR", status=400)
-    except OpenAITimeoutError as exc:
-        return fail(str(exc), "OPENAI_TIMEOUT", status=504)
+    except (OpenAITimeoutError, ClaudeTimeoutError) as exc:
+        return fail(str(exc), "LLM_TIMEOUT", status=504)
     except Exception as exc:
         return fail(str(exc), "ACL_GENERATE_COMMANDS_ERROR", status=500)
 

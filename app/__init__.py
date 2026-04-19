@@ -42,6 +42,7 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
     logging.getLogger("app.services.batfish_manager").setLevel(logging.DEBUG)
+    logging.getLogger("app.services.claude_manager").setLevel(logging.DEBUG)
     logging.getLogger("app.services.openai_manager").setLevel(logging.DEBUG)
 
     _validate_required_config(app)
