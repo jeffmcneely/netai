@@ -241,11 +241,11 @@ class BatfishManager:
                     }
                 )
                 removed = True
-                message = "removed"
+                message = f"removed: {line_text}"
             else:
                 active[line_idx] = True
                 removed = False
-                message = "restored due to compareFilters diff"
+                message = f"kept: {line_text}"
 
             iteration_record = {
                 "iteration": i,

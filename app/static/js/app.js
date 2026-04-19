@@ -1,5 +1,6 @@
 const PAGE_SIZE = 250;
 let activeAjaxRequestCount = 0;
+let activeAjaxSpinnerHoldCount = 0;
 let globalAjaxSpinnerTimerIntervalId = null;
 let globalAjaxSpinnerTimerStartMs = 0;
 
@@ -88,13 +89,25 @@ function installGlobalAjaxSpinner() {
       return await nativeFetch(...args);
     } finally {
       activeAjaxRequestCount = Math.max(0, activeAjaxRequestCount - 1);
-      if (activeAjaxRequestCount === 0) {
+      if (activeAjaxRequestCount === 0 && activeAjaxSpinnerHoldCount === 0) {
         setGlobalAjaxSpinnerVisible(false);
       }
     }
   };
 
   window.__netaiFetchSpinnerInstalled = true;
+}
+
+function holdGlobalAjaxSpinner() {
+  activeAjaxSpinnerHoldCount += 1;
+  setGlobalAjaxSpinnerVisible(true);
+}
+
+function releaseGlobalAjaxSpinner() {
+  activeAjaxSpinnerHoldCount = Math.max(0, activeAjaxSpinnerHoldCount - 1);
+  if (activeAjaxRequestCount === 0 && activeAjaxSpinnerHoldCount === 0) {
+    setGlobalAjaxSpinnerVisible(false);
+  }
 }
 
 async function fetchConfigs() {
@@ -1599,6 +1612,7 @@ async function initAclOptimizePage() {
 
   removeJunkBtn.addEventListener('click', async () => {
     removeJunkBtn.disabled = true;
+    holdGlobalAjaxSpinner();
     candidateInput.value = '';
     verifyResults.innerHTML = '';
     verifyResults.classList.add('hidden');
@@ -1677,6 +1691,7 @@ async function initAclOptimizePage() {
       showMessage(status, `<p>${escapeHtml(err.message)}</p>`);
       showMessage(removeJunkProgress, '<p>Remove junk failed.</p>');
     } finally {
+      releaseGlobalAjaxSpinner();
       removeJunkBtn.disabled = false;
     }
   });
