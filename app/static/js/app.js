@@ -1557,6 +1557,12 @@ async function initAclOptimizePage() {
   const verifyResults = document.getElementById('aclVerifyResults');
 
   optimizeBtn.addEventListener('click', async () => {
+    candidateInput.value = '';
+    diffResults.innerHTML = '';
+    diffResults.classList.add('hidden');
+    verifyResults.innerHTML = '';
+    verifyResults.classList.add('hidden');
+
     try {
       const platform = (platformInput.value || '').trim();
       const current = (currentInput.value || '').trim();

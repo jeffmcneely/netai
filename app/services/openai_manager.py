@@ -5,10 +5,25 @@ import time
 logger = logging.getLogger(__name__)
 
 
+OPENAI_REQUEST_TIMEOUT_SECONDS = 120.0
+
+
+class OpenAITimeoutError(RuntimeError):
+    pass
+
+
+def _is_timeout_error(exc: Exception) -> bool:
+    if isinstance(exc, TimeoutError):
+        return True
+    if exc.__class__.__name__ in {"APITimeoutError", "TimeoutException"}:
+        return True
+    return "timed out" in str(exc).lower()
+
+
 class OpenAIManager:
     def __init__(self, api_key: str, model: str):
         self.api_key = (api_key or "").strip()
-        self.model = (model or "gpt-5.2").strip() or "gpt-5.2"
+        self.model = (model or "gpt-5.4").strip() or "gpt-5.4"
 
     def optimize_acl(self, current_acl: str) -> str:
         if not self.api_key:
@@ -60,10 +75,14 @@ class OpenAIManager:
                     },
                 ],
             )
-        except Exception:
+        except Exception as exc:
             elapsed_ms = int((time.perf_counter() - start) * 1000)
             print(f"[OPENAI DEBUG] optimize failed after {elapsed_ms}ms", flush=True)
             logger.exception("OPENAI optimize failed after %dms", elapsed_ms)
+            if _is_timeout_error(exc):
+                raise OpenAITimeoutError(
+                    f"OpenAI request timed out after {int(OPENAI_REQUEST_TIMEOUT_SECONDS)} seconds. Please retry."
+                ) from exc
             raise
 
         output_text = (response.output_text or "").strip()
@@ -116,6 +135,7 @@ class OpenAIManager:
         try:
             response = client.responses.create(
                 model=self.model,
+                timeout=OPENAI_REQUEST_TIMEOUT_SECONDS,
                 input=[
                     {
                         "role": "user",
@@ -128,10 +148,14 @@ class OpenAIManager:
                     },
                 ],
             )
-        except Exception:
+        except Exception as exc:
             elapsed_ms = int((time.perf_counter() - start) * 1000)
             print(f"[OPENAI DEBUG] generate-commands failed after {elapsed_ms}ms", flush=True)
             logger.exception("OPENAI generate-commands failed after %dms", elapsed_ms)
+            if _is_timeout_error(exc):
+                raise OpenAITimeoutError(
+                    f"OpenAI request timed out after {int(OPENAI_REQUEST_TIMEOUT_SECONDS)} seconds. Please retry."
+                ) from exc
             raise
 
         output_text = (response.output_text or "").strip()

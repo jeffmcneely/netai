@@ -4,7 +4,7 @@ from collections import Counter
 
 from app.services.batfish_manager import BatfishManager, build_header_constraints
 from app.services.ip_finder import find_object_matches, find_string_matches, normalize_max_results
-from app.services.openai_manager import OpenAIManager
+from app.services.openai_manager import OpenAIManager, OpenAITimeoutError
 from app.services.s3_manager import S3Manager
 from app.utils.responses import fail, ok
 from app.utils.validators import (
@@ -40,7 +40,7 @@ def _batfish_manager() -> BatfishManager:
 def _openai_manager() -> OpenAIManager:
     return OpenAIManager(
         api_key=current_app.config.get("OPENAI_API_KEY", ""),
-        model=current_app.config.get("OPENAI_MODEL", "gpt-5.2"),
+        model=current_app.config.get("OPENAI_MODEL", "gpt-5.4"),
     )
 
 
@@ -323,6 +323,8 @@ def acl_optimize():
         )
     except ValidationError as exc:
         return fail(str(exc), "VALIDATION_ERROR", status=400)
+    except OpenAITimeoutError as exc:
+        return fail(str(exc), "OPENAI_TIMEOUT", status=504)
     except Exception as exc:
         return fail(str(exc), "ACL_OPTIMIZE_ERROR", status=500)
 
@@ -377,6 +379,8 @@ def acl_generate_commands():
         return ok({"commands": commands})
     except ValidationError as exc:
         return fail(str(exc), "VALIDATION_ERROR", status=400)
+    except OpenAITimeoutError as exc:
+        return fail(str(exc), "OPENAI_TIMEOUT", status=504)
     except Exception as exc:
         return fail(str(exc), "ACL_GENERATE_COMMANDS_ERROR", status=500)
 
