@@ -16,7 +16,7 @@ class OpenAIManager:
 
         prompt = (
             "optimize these rules. do not add additional access. merge rules where it will simplify access. "
-            "remove any rules that are unreachable. do not change order of rules. "
+            "remove any rules that are unreachable. do not change order of rules. remove rules that are redundant. remove rules that have no effect."
             "only return optimized rules with no commentary"
         )
 
