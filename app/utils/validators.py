@@ -28,6 +28,12 @@ ACL_PLATFORM_PROMPT_MAP = {
     "paloalto": "palo alto",
     "ciscoasa": "cisco asa",
 }
+OPENAI_MODELS = {
+    "gpt-5.2",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.2-mini",
+}
 
 
 class ValidationError(ValueError):
@@ -129,16 +135,27 @@ def map_acl_platform_prompt(raw_value: object) -> str:
     return ACL_PLATFORM_PROMPT_MAP[platform]
 
 
-def parse_acl_optimize_payload(payload: dict) -> tuple[str, str]:
+def validate_openai_model(raw_value: object) -> str | None:
+    model = str(raw_value or "").strip()
+    if not model:
+        return None
+    if model not in OPENAI_MODELS:
+        allowed = ", ".join(sorted(OPENAI_MODELS))
+        raise ValidationError(f"model must be one of: {allowed}")
+    return model
+
+
+def parse_acl_optimize_payload(payload: dict) -> tuple[str, str, str | None]:
     if payload is None:
         raise ValidationError("JSON payload is required")
 
     platform = validate_acl_platform(payload.get("platform"))
+    model = validate_openai_model(payload.get("model"))
     current_acl = str(payload.get("current", "")).strip()
     if not current_acl:
         raise ValidationError("current is required")
 
-    return platform, current_acl
+    return platform, current_acl, model
 
 
 def parse_acl_verify_payload(payload: dict) -> tuple[str, str, str]:
@@ -157,11 +174,12 @@ def parse_acl_verify_payload(payload: dict) -> tuple[str, str, str]:
     return platform, original_acl, candidate_acl
 
 
-def parse_acl_generate_commands_payload(payload: dict) -> tuple[str, str, str]:
+def parse_acl_generate_commands_payload(payload: dict) -> tuple[str, str, str, str | None]:
     if payload is None:
         raise ValidationError("JSON payload is required")
 
     mapped_platform = map_acl_platform_prompt(payload.get("platform"))
+    model = validate_openai_model(payload.get("model"))
     current_acl = str(payload.get("current", "")).strip()
     candidate_acl = str(payload.get("candidate", "")).strip()
 
@@ -170,4 +188,4 @@ def parse_acl_generate_commands_payload(payload: dict) -> tuple[str, str, str]:
     if not candidate_acl:
         raise ValidationError("candidate is required")
 
-    return mapped_platform, current_acl, candidate_acl
+    return mapped_platform, current_acl, candidate_acl, model

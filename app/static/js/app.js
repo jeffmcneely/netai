@@ -1547,6 +1547,7 @@ async function initAclOptimizePage() {
   }
 
   const platformInput = document.getElementById('aclPlatform');
+  const modelInput = document.getElementById('aclModel');
   const currentInput = document.getElementById('aclCurrent');
   const candidateInput = document.getElementById('aclCandidate');
   const optimizeBtn = document.getElementById('aclOptimizeBtn');
@@ -1565,6 +1566,7 @@ async function initAclOptimizePage() {
 
     try {
       const platform = (platformInput.value || '').trim();
+      const model = (modelInput?.value || '').trim();
       const current = (currentInput.value || '').trim();
       if (!current) {
         throw new Error('current is required');
@@ -1573,7 +1575,7 @@ async function initAclOptimizePage() {
       const res = await fetch('/api/acl/optimize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform, current }),
+        body: JSON.stringify({ platform, model, current }),
       });
       const json = await res.json();
       if (json.status !== 'success') {
@@ -1590,6 +1592,7 @@ async function initAclOptimizePage() {
   generateCommandsBtn.addEventListener('click', async () => {
     try {
       const platform = (platformInput.value || '').trim();
+      const model = (modelInput?.value || '').trim();
       const current = (currentInput.value || '').trim();
       const candidate = (candidateInput.value || '').trim();
       if (!current) {
@@ -1602,7 +1605,7 @@ async function initAclOptimizePage() {
       const res = await fetch('/api/acl/generate-commands', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform, current, candidate }),
+        body: JSON.stringify({ platform, model, current, candidate }),
       });
       const json = await res.json();
       if (json.status !== 'success') {
@@ -1655,7 +1658,6 @@ async function initAclOptimizePage() {
 
       const rows = Array.isArray(json.data?.rows) ? json.data.rows : [];
       if (rows.length === 0) {
-        showMessage(status, '<p>no access changes found.</p>');
         showMessage(verifyResults, '<p>no access changes found.</p>');
         return;
       }

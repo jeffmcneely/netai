@@ -1,6 +1,7 @@
 from flask import Blueprint, current_app, request
 import json
 from collections import Counter
+from typing import Optional
 
 from app.services.batfish_manager import BatfishManager, build_header_constraints
 from app.services.ip_finder import find_object_matches, find_string_matches, normalize_max_results
@@ -37,10 +38,11 @@ def _batfish_manager() -> BatfishManager:
     return BatfishManager(server=current_app.config.get("BATFISH_SERVER", ""))
 
 
-def _openai_manager() -> OpenAIManager:
+def _openai_manager(model_override: Optional[str] = None) -> OpenAIManager:
+    model = model_override or current_app.config.get("OPENAI_MODEL", "gpt-5.4")
     return OpenAIManager(
         api_key=current_app.config.get("OPENAI_API_KEY", ""),
-        model=current_app.config.get("OPENAI_MODEL", "gpt-5.4"),
+        model=model,
     )
 
 
@@ -312,12 +314,13 @@ def list_configs():
 def acl_optimize():
     try:
         payload = request.get_json(force=True)
-        platform, current_acl = parse_acl_optimize_payload(payload)
+        platform, current_acl, model = parse_acl_optimize_payload(payload)
 
-        optimized_acl = _openai_manager().optimize_acl(current_acl)
+        optimized_acl = _openai_manager(model).optimize_acl(current_acl)
         return ok(
             {
                 "platform": platform,
+                "model": model or current_app.config.get("OPENAI_MODEL", "gpt-5.4"),
                 "candidate": optimized_acl,
             }
         )
@@ -369,14 +372,14 @@ def acl_verify():
 def acl_generate_commands():
     try:
         payload = request.get_json(force=True)
-        mapped_platform, current_acl, candidate_acl = parse_acl_generate_commands_payload(payload)
+        mapped_platform, current_acl, candidate_acl, model = parse_acl_generate_commands_payload(payload)
 
-        commands = _openai_manager().generate_acl_commands(
+        commands = _openai_manager(model).generate_acl_commands(
             platform_context=mapped_platform,
             current_acl=current_acl,
             candidate_acl=candidate_acl,
         )
-        return ok({"commands": commands})
+        return ok({"commands": commands, "model": model or current_app.config.get("OPENAI_MODEL", "gpt-5.4")})
     except ValidationError as exc:
         return fail(str(exc), "VALIDATION_ERROR", status=400)
     except OpenAITimeoutError as exc:
