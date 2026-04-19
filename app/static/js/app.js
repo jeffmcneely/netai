@@ -1,5 +1,57 @@
 const PAGE_SIZE = 250;
 let activeAjaxRequestCount = 0;
+let globalAjaxSpinnerTimerIntervalId = null;
+let globalAjaxSpinnerTimerStartMs = 0;
+
+function getGlobalAjaxSpinnerTimer() {
+  return document.getElementById('globalAjaxSpinnerTimer');
+}
+
+function formatGlobalAjaxSpinnerElapsed(elapsedMs) {
+  const totalSeconds = Math.floor(elapsedMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const centiseconds = Math.floor((elapsedMs % 1000) / 10);
+
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(centiseconds).padStart(2, '0')}`;
+}
+
+function updateGlobalAjaxSpinnerTimer() {
+  const timer = getGlobalAjaxSpinnerTimer();
+  if (!timer) {
+    return;
+  }
+
+  timer.textContent = formatGlobalAjaxSpinnerElapsed(Date.now() - globalAjaxSpinnerTimerStartMs);
+}
+
+function resetGlobalAjaxSpinnerTimerDisplay() {
+  const timer = getGlobalAjaxSpinnerTimer();
+  if (!timer) {
+    return;
+  }
+
+  timer.textContent = '00:00:00.00';
+}
+
+function startGlobalAjaxSpinnerTimer() {
+  globalAjaxSpinnerTimerStartMs = Date.now();
+  updateGlobalAjaxSpinnerTimer();
+
+  if (globalAjaxSpinnerTimerIntervalId !== null) {
+    clearInterval(globalAjaxSpinnerTimerIntervalId);
+  }
+
+  globalAjaxSpinnerTimerIntervalId = window.setInterval(updateGlobalAjaxSpinnerTimer, 10);
+}
+
+function stopGlobalAjaxSpinnerTimer() {
+  if (globalAjaxSpinnerTimerIntervalId !== null) {
+    clearInterval(globalAjaxSpinnerTimerIntervalId);
+    globalAjaxSpinnerTimerIntervalId = null;
+  }
+}
 
 function setGlobalAjaxSpinnerVisible(isVisible) {
   const spinner = document.getElementById('globalAjaxSpinner');
@@ -7,8 +59,19 @@ function setGlobalAjaxSpinnerVisible(isVisible) {
     return;
   }
 
+  const wasVisible = spinner.classList.contains('is-active');
+
   spinner.classList.toggle('is-active', isVisible);
   spinner.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
+
+  if (isVisible && !wasVisible) {
+    startGlobalAjaxSpinnerTimer();
+  }
+
+  if (!isVisible && wasVisible) {
+    stopGlobalAjaxSpinnerTimer();
+    resetGlobalAjaxSpinnerTimerDisplay();
+  }
 }
 
 function installGlobalAjaxSpinner() {

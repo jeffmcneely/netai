@@ -10,8 +10,11 @@
   <div id="appShell" class="app-shell">
     <aside id="appNavPanel" class="nav-panel">
       <div id="globalAjaxSpinner" class="nav-spinner" role="status" aria-live="polite" aria-hidden="true">
-        <span class="nav-spinner-wheel" aria-hidden="true"></span>
-        <span class="nav-spinner-label">loading</span>
+        <span class="loader" aria-hidden="true"></span>
+        <span class="nav-spinner-copy">
+          <span class="nav-spinner-label">thinking</span>
+          <span id="globalAjaxSpinnerTimer" class="nav-spinner-timer">00:00:00.00</span>
+        </span>
       </div>
       <h1 id="appBrand" class="brand">NetAI</h1>
       <nav id="primaryNav">
