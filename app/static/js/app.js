@@ -188,6 +188,49 @@ function isTraceValue(value) {
   return Array.isArray(value) && value.length > 0;
 }
 
+function isSourceLinesValue(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(value, 'filename')) {
+    return false;
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(value, 'lines')) {
+    return false;
+  }
+
+  return Array.isArray(value.lines);
+}
+
+function renderAnalyzeCellValue(value) {
+  if (!isSourceLinesValue(value)) {
+    return formatCell(value);
+  }
+
+  const filename = String(value.filename || '').trim();
+  const rawLines = Array.isArray(value.lines) ? value.lines : [];
+  const lines = rawLines
+    .map((line) => Number(line))
+    .filter((line) => Number.isInteger(line) && line > 0);
+
+  if (!filename) {
+    return formatCell(value);
+  }
+
+  if (!lines.length) {
+    return `<span>${escapeHtml(filename)}</span>`;
+  }
+
+  return lines
+    .map((line) => {
+      const text = `${filename}:${line}`;
+      return `<a href="#" class="analyze-source-line-link" data-source-filename="${escapeHtml(filename)}" data-source-line="${line}">${escapeHtml(text)}</a>`;
+    })
+    .join('<br>');
+}
+
 function renderAnalyzeTable(target, rows, page = 1) {
   target.classList.remove('hidden');
   if (!rows.length) {
@@ -202,7 +245,7 @@ function renderAnalyzeTable(target, rows, page = 1) {
   const header = `<tr>${columns.map((col) => `<th>${escapeHtml(col)}</th>`).join('')}<th>Flow</th><th>Trace</th></tr>`;
   const body = paged.map((row, idx) => {
     const rowIndex = start + idx;
-    const cols = columns.map((col) => `<td>${formatCell(row[col])}</td>`).join('');
+    const cols = columns.map((col) => `<td>${renderAnalyzeCellValue(row[col])}</td>`).join('');
     const flowButton = isFlowValue(row.Flow)
       ? `<button type="button" class="detail-btn" data-kind="flow" data-row-index="${rowIndex}">view flow</button>`
       : '';
@@ -938,6 +981,9 @@ async function initAnalyzePage() {
 
   const newField = document.getElementById('analyzeNewFolderName');
   const analyzeBtn = document.getElementById('analyzeBtn');
+  const structuresBtn = document.getElementById('structuresBtn');
+  const undefinedStructuresBtn = document.getElementById('undefinedStructuresBtn');
+  const unusedStructuresBtn = document.getElementById('unusedStructuresBtn');
   const unreachableRulesBtn = document.getElementById('unreachableRulesBtn');
   const snmpCheckBtn = document.getElementById('snmpCheckBtn');
   const searchBtn = document.getElementById('searchBtn');
@@ -1086,6 +1132,50 @@ async function initAnalyzePage() {
   };
 
   results.addEventListener('click', (event) => {
+    const sourceLineLink = event.target.closest('.analyze-source-line-link');
+    if (sourceLineLink) {
+      event.preventDefault();
+
+      const filename = sourceLineLink.getAttribute('data-source-filename') || '';
+      const jumpLine = Number(sourceLineLink.getAttribute('data-source-line') || 0);
+      if (!filename || jumpLine < 1) {
+        return;
+      }
+
+      const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
+      const folder = folderInfo.use_new ? folderInfo.new_folder_name : folderInfo.config_folder;
+      const query = new URLSearchParams({
+        config_folder: folder,
+        filename,
+        jump_line: String(jumpLine),
+      });
+
+      fetch(`/api/find-object/file?${query.toString()}`)
+        .then((res) => res.json())
+        .then((json) => {
+          if (json.status !== 'success') {
+            throw new Error(json.error?.message || 'Failed to open file');
+          }
+
+          fileViewerFlyoutBody.innerHTML = renderFileViewerHtml(json.data || {});
+          fileViewerFlyout.classList.remove('hidden');
+          const fileViewerTitle = document.getElementById('fileViewerFlyoutTitle');
+          if (fileViewerTitle) {
+            fileViewerTitle.textContent = 'File Viewer';
+          }
+
+          const target = fileViewerFlyoutBody.querySelector(`[data-viewer-line="${jumpLine}"]`);
+          if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        })
+        .catch((err) => {
+          showMessage(meta, `<p>${escapeHtml(err.message)}</p>`);
+        });
+
+      return;
+    }
+
     const detailBtn = event.target.closest('.detail-btn');
     if (detailBtn) {
       const kind = detailBtn.getAttribute('data-kind');
@@ -1337,6 +1427,87 @@ async function initAnalyzePage() {
       const json = await res.json();
       if (json.status !== 'success') {
         throw new Error(json.error?.message || 'Analyze failed');
+      }
+
+      snapshotName = json.data.snapshot_name;
+      resultMode = 'analyze';
+      snmpReport = null;
+      allRows = json.data.rows || [];
+      filteredRows = [...allRows];
+      closeDetailFlyout();
+      closeFileViewerFlyout();
+      updateMeta(filteredRows.length, allRows.length);
+      renderRows(filteredRows);
+    } catch (err) {
+      showMessage(meta, `<p>${escapeHtml(err.message)}</p>`);
+    }
+  });
+
+  structuresBtn.addEventListener('click', async () => {
+    try {
+      const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
+      const res = await fetch('/api/structures', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(folderInfo),
+      });
+      const json = await res.json();
+      if (json.status !== 'success') {
+        throw new Error(json.error?.message || 'Structures query failed');
+      }
+
+      snapshotName = json.data.snapshot_name;
+      resultMode = 'analyze';
+      snmpReport = null;
+      allRows = json.data.rows || [];
+      filteredRows = [...allRows];
+      closeDetailFlyout();
+      closeFileViewerFlyout();
+      updateMeta(filteredRows.length, allRows.length);
+      renderRows(filteredRows);
+    } catch (err) {
+      showMessage(meta, `<p>${escapeHtml(err.message)}</p>`);
+    }
+  });
+
+  undefinedStructuresBtn.addEventListener('click', async () => {
+    try {
+      const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
+      const res = await fetch('/api/undefined-structures', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(folderInfo),
+      });
+      const json = await res.json();
+      if (json.status !== 'success') {
+        throw new Error(json.error?.message || 'Undefined structures query failed');
+      }
+
+      snapshotName = json.data.snapshot_name;
+      resultMode = 'analyze';
+      snmpReport = null;
+      allRows = json.data.rows || [];
+      filteredRows = [...allRows];
+      closeDetailFlyout();
+      closeFileViewerFlyout();
+      updateMeta(filteredRows.length, allRows.length);
+      renderRows(filteredRows);
+    } catch (err) {
+      showMessage(meta, `<p>${escapeHtml(err.message)}</p>`);
+    }
+  });
+
+  unusedStructuresBtn.addEventListener('click', async () => {
+    try {
+      const folderInfo = getFolderSelection('analyzeFolderChoice', 'analyzeNewFolderName');
+      const res = await fetch('/api/unused-structures', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(folderInfo),
+      });
+      const json = await res.json();
+      if (json.status !== 'success') {
+        throw new Error(json.error?.message || 'Unused structures query failed');
       }
 
       snapshotName = json.data.snapshot_name;

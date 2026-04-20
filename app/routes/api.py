@@ -654,6 +654,67 @@ def unreachable_rules():
         return fail(str(exc), "UNREACHABLE_RULES_ERROR", status=500)
 
 
+@api_bp.post("/structures")
+def structures():
+    try:
+        payload = request.get_json(force=True)
+        config_folder = _resolve_config_folder(payload)
+
+        s3 = _s3_manager()
+        bf = _batfish_manager()
+        snapshot_name = bf.init_snapshot(s3.get_snapshot_zip_data(config_folder), config_folder)
+        rows = bf.run_named_structures()
+        simplified_rows = [
+            {
+                "node": row.get("Node", ""),
+                "name": row.get("Structure_Name", ""),
+            }
+            for row in rows
+        ]
+
+        return ok({"snapshot_name": snapshot_name, "rows": simplified_rows})
+    except ValidationError as exc:
+        return fail(str(exc), "VALIDATION_ERROR", status=400)
+    except Exception as exc:
+        return fail(str(exc), "STRUCTURES_ERROR", status=500)
+
+
+@api_bp.post("/undefined-structures")
+def undefined_structures():
+    try:
+        payload = request.get_json(force=True)
+        config_folder = _resolve_config_folder(payload)
+
+        s3 = _s3_manager()
+        bf = _batfish_manager()
+        snapshot_name = bf.init_snapshot(s3.get_snapshot_zip_data(config_folder), config_folder)
+        rows = bf.run_undefined_references()
+
+        return ok({"snapshot_name": snapshot_name, "rows": rows})
+    except ValidationError as exc:
+        return fail(str(exc), "VALIDATION_ERROR", status=400)
+    except Exception as exc:
+        return fail(str(exc), "UNDEFINED_STRUCTURES_ERROR", status=500)
+
+
+@api_bp.post("/unused-structures")
+def unused_structures():
+    try:
+        payload = request.get_json(force=True)
+        config_folder = _resolve_config_folder(payload)
+
+        s3 = _s3_manager()
+        bf = _batfish_manager()
+        snapshot_name = bf.init_snapshot(s3.get_snapshot_zip_data(config_folder), config_folder)
+        rows = bf.run_unused_structures()
+
+        return ok({"snapshot_name": snapshot_name, "rows": rows})
+    except ValidationError as exc:
+        return fail(str(exc), "VALIDATION_ERROR", status=400)
+    except Exception as exc:
+        return fail(str(exc), "UNUSED_STRUCTURES_ERROR", status=500)
+
+
 @api_bp.post("/search")
 def search():
     try:

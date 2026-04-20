@@ -405,6 +405,72 @@ class BatfishManager:
         frame = query.answer().frame()
         return _frame_to_records(frame)
 
+    def run_undefined_references(
+        self,
+        nodes: Optional[object] = None,
+        structure_types: Optional[object] = None,
+        reference_types: Optional[object] = None,
+        names: Optional[object] = None,
+    ) -> List[Dict[str, object]]:
+        bf = self._session()
+        print(
+            f"[BATFISH DEBUG] query=undefinedReferences host={self.server} nodes={nodes if nodes else '*'} structure_types={structure_types if structure_types else '*'} reference_types={reference_types if reference_types else '*'}",
+            flush=True,
+        )
+        kwargs: Dict[str, object] = {}
+        if nodes is not None:
+            kwargs["nodes"] = nodes
+        if structure_types is not None:
+            kwargs["structureTypes"] = structure_types
+        if reference_types is not None:
+            kwargs["referenceTypes"] = reference_types
+        if names is not None:
+            kwargs["names"] = names
+
+        query = bf.q.undefinedReferences(**kwargs)
+        logger.debug(
+            "Sending Batfish query host=%s query=%s nodes=%r structure_types=%r reference_types=%r names=%r",
+            self.server,
+            "undefinedReferences",
+            nodes,
+            structure_types,
+            reference_types,
+            names,
+        )
+        frame = query.answer().frame()
+        return _frame_to_records(frame)
+
+    def run_unused_structures(
+        self,
+        nodes: Optional[object] = None,
+        structure_types: Optional[object] = None,
+        structure_names: Optional[object] = None,
+    ) -> List[Dict[str, object]]:
+        bf = self._session()
+        print(
+            f"[BATFISH DEBUG] query=unusedStructures host={self.server} nodes={nodes if nodes else '*'} structure_types={structure_types if structure_types else '*'}",
+            flush=True,
+        )
+        kwargs: Dict[str, object] = {}
+        if nodes is not None:
+            kwargs["nodes"] = nodes
+        if structure_types is not None:
+            kwargs["structureTypes"] = structure_types
+        if structure_names is not None:
+            kwargs["structureNames"] = structure_names
+
+        query = bf.q.unusedStructures(**kwargs)
+        logger.debug(
+            "Sending Batfish query host=%s query=%s nodes=%r structure_types=%r structure_names=%r",
+            self.server,
+            "unusedStructures",
+            nodes,
+            structure_types,
+            structure_names,
+        )
+        frame = query.answer().frame()
+        return _frame_to_records(frame)
+
     def run_switched_vlan_properties(self, node_hostname: Optional[str] = None) -> List[Dict[str, object]]:
         bf = self._session()
         print(
